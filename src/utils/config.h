@@ -40,6 +40,9 @@ typedef struct {
     int              default_delay;  /**< Seconds */
     int              show_cursor;
 
+    /** Wayland only: 0 = Screenshot portal first (GNOME/Fedora-like), 1 = ScreenCast first */
+    int              wayland_capture_prefer;
+
     /* Output */
     SnapxOutputFormat default_format;
     int               jpeg_quality;  /**< 1–100 */

@@ -30,14 +30,22 @@ typedef struct {
  * When @p background is NULL, a semi-transparent dim is used over the live
  * desktop (X11 compositing); on Wayland this may appear as a black overlay.
  *
+ * When @p monitors and @p n_monitors > 1 with a full-desktop @p background,
+ * one native-resolution freeze overlay is shown on each monitor (regions can
+ * span displays via cross-monitor drag).
+ *
  * @param parent      Unused (pass NULL); kept for API stability.
- * @param background  Optional freeze-frame for overlay only, or NULL (preferred).
+ * @param background  Optional freeze-frame for overlay only, or NULL.
+ * @param monitors    Monitor layout from snapx_get_monitors (may be NULL).
+ * @param n_monitors  Number of entries in @p monitors (0 if NULL).
  * @param region      Output: selected rectangle in virtual-desktop coordinates.
  * @return 1 if a region was confirmed, 0 if cancelled.
  */
-int snapx_overlay_select_region(GtkWindow        *parent,
-                                  const SnapxImage *background,
-                                  SnapxRegion      *region);
+int snapx_overlay_select_region(GtkWindow              *parent,
+                                  const SnapxImage       *background,
+                                  const SnapxMonitorInfo *monitors,
+                                  int                     n_monitors,
+                                  SnapxRegion            *region);
 
 /**
  * @brief Show a fullscreen monitor-picker overlay.

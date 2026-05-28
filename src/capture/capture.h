@@ -210,7 +210,18 @@ int snapx_capture_x11_init(SnapxCaptureBackend *backend);
 int  snapx_capture_wayland_init(SnapxCaptureBackend *backend);
 void snapx_capture_wayland_set_parent_window(SnapxCaptureBackend *backend,
                                               const char *parent_window_str);
+/** 0 = Screenshot portal first (default), 1 = ScreenCast + PipeWire first */
+void snapx_capture_wayland_set_capture_prefer(SnapxCaptureBackend *backend,
+                                               int prefer_screencast);
 void snapx_capture_wayland_save_token(SnapxCaptureBackend *backend);
+
+#ifndef SNAPX_HEADLESS
+typedef void (*SnapxCaptureDoneFn)(SnapxImage *img, void *user_data);
+/** Run snapx_capture on a worker thread; @p done runs on the GTK main thread. */
+void snapx_capture_async(SnapxCaptureBackend *backend,
+                          const SnapxCaptureRequest *req,
+                          SnapxCaptureDoneFn done, void *user_data);
+#endif
 int snapx_capture_windows_init(SnapxCaptureBackend *backend);
 int snapx_capture_macos_init(SnapxCaptureBackend *backend);
 

@@ -808,6 +808,14 @@ static void snapx_hide_for_capture(MainWindow *mw)
     g_usleep(200 * 1000);
 }
 
+static gboolean clipboard_idle_cb(gpointer data)
+{
+    MainWindow *mw = data;
+    if (mw->current_image)
+        snapx_clipboard_copy_image(mw->current_image);
+    return G_SOURCE_REMOVE;
+}
+
 static void after_capture(MainWindow *mw, SnapxImage *img, const char *ok_msg)
 {
     snapx_restore_window_state(mw);
@@ -835,12 +843,40 @@ static void after_capture(MainWindow *mw, SnapxImage *img, const char *ok_msg)
 
     set_status(mw, ok_msg);
     snapx_capture_wayland_save_token(mw->backend);
-    if (mw->config->auto_clipboard) snapx_clipboard_copy_image(img);
+    if (mw->config->auto_clipboard)
+        g_idle_add(clipboard_idle_cb, mw);
+}
+
+static void snapx_main_sync_wayland_prefer(MainWindow *mw)
+{
+    if (!mw->backend || mw->backend->type != SNAPX_BACKEND_WAYLAND || !mw->config)
+        return;
+    snapx_capture_wayland_set_capture_prefer(mw->backend,
+                                            mw->config->wayland_capture_prefer);
+}
+
+typedef struct {
+    MainWindow       *mw;
+    SnapxCaptureMode  mode;
+    int               delay;
+} FullCaptureCtx;
+
+static void do_capture_done(SnapxImage *img, gpointer data)
+{
+    FullCaptureCtx *ctx = data;
+    after_capture(ctx->mw, img, "Screenshot captured. Annotate or save.");
+    g_free(ctx);
 }
 
 static void do_capture(MainWindow *mw, SnapxCaptureMode mode, int delay)
 {
     snapx_hide_for_capture(mw);
+    set_status(mw, "Capturing desktop…");
+
+    FullCaptureCtx *ctx = g_new(FullCaptureCtx, 1);
+    ctx->mw    = mw;
+    ctx->mode  = mode;
+    ctx->delay = delay;
 
     SnapxCaptureRequest req = {0};
     req.mode           = mode;
@@ -848,8 +884,7 @@ static void do_capture(MainWindow *mw, SnapxCaptureMode mode, int delay)
     req.monitor_index  = 0;
     req.include_cursor = mw->config->show_cursor;
 
-    SnapxImage *img = snapx_capture(mw->backend, &req);
-    after_capture(mw, img, "Screenshot captured. Annotate or save.");
+    snapx_capture_async(mw->backend, &req, do_capture_done, ctx);
 }
 
 /* ─── Button callbacks ─────────────────────────────────────────────────────── */
@@ -859,33 +894,33 @@ static void on_capture_fullscreen(GtkButton *b, gpointer d)
     (void)b; do_capture((MainWindow *)d, SNAPX_CAPTURE_FULLSCREEN, 0);
 }
 
-static void on_capture_region(GtkButton *b, gpointer d)
+typedef struct {
+    MainWindow *mw;
+} RegionCaptureCtx;
+
+static void region_capture_desktop_done(SnapxImage *full, gpointer data)
 {
-    (void)b;
-    MainWindow *mw = (MainWindow *)d;
+    RegionCaptureCtx *ctx = data;
+    MainWindow *mw = ctx->mw;
+    g_free(ctx);
 
-    snapx_hide_for_capture(mw);
-
-    SnapxCaptureRequest full_req = {0};
-    full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
-    full_req.include_cursor = mw->config->show_cursor;
-    SnapxImage *full = snapx_capture(mw->backend, &full_req);
     if (!full) {
         snapx_restore_window_state(mw);
         set_status(mw, "Capture failed — check backend with snapx --info.");
         return;
     }
 
+    SnapxMonitorInfo monitors[8] = {0};
+    int n_mon = snapx_get_monitors(mw->backend, monitors, 8);
+
     SnapxRegion region = {0};
-    int ok = snapx_overlay_select_region(NULL, full, &region);
+    int ok = snapx_overlay_select_region(NULL, full, monitors, n_mon, &region);
     if (!ok) {
         snapx_image_free(full);
         snapx_restore_window_state(mw);
         return;
     }
 
-    SnapxMonitorInfo monitors[8] = {0};
-    int n_mon = snapx_get_monitors(mw->backend, monitors, 8);
     SnapxImage *img = snapx_image_crop_desktop(full, region.x, region.y,
                                                 region.width, region.height,
                                                 monitors, n_mon);
@@ -893,6 +928,54 @@ static void on_capture_region(GtkButton *b, gpointer d)
 
     after_capture(mw, img,
                   "Region captured — click Save to write a file.");
+}
+
+static void on_capture_region(GtkButton *b, gpointer d)
+{
+    (void)b;
+    MainWindow *mw = (MainWindow *)d;
+
+    snapx_hide_for_capture(mw);
+    if (mw->config && mw->config->wayland_capture_prefer)
+        set_status(mw, "Capturing desktop… Approve screen sharing if prompted.");
+    else
+        set_status(mw, "Capturing desktop…");
+
+    RegionCaptureCtx *ctx = g_new(RegionCaptureCtx, 1);
+    ctx->mw = mw;
+
+    SnapxCaptureRequest full_req = {0};
+    full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
+    full_req.include_cursor = mw->config->show_cursor;
+    snapx_capture_async(mw->backend, &full_req, region_capture_desktop_done, ctx);
+}
+
+typedef struct {
+    MainWindow       *mw;
+    SnapxMonitorInfo  monitors[8];
+    int               n;
+    int               idx;
+} MonitorCaptureCtx;
+
+static void monitor_capture_done(SnapxImage *full_img, gpointer data)
+{
+    MonitorCaptureCtx *ctx = data;
+    MainWindow *mw = ctx->mw;
+    SnapxImage *img = NULL;
+    if (full_img) {
+        img = snapx_image_crop_desktop(full_img,
+            ctx->monitors[ctx->idx].x, ctx->monitors[ctx->idx].y,
+            ctx->monitors[ctx->idx].width, ctx->monitors[ctx->idx].height,
+            ctx->monitors, ctx->n);
+        snapx_image_free(full_img);
+    }
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Monitor %d captured (%d × %d).",
+             ctx->idx + 1,
+             ctx->monitors[ctx->idx].width,
+             ctx->monitors[ctx->idx].height);
+    after_capture(mw, img, msg);
+    g_free(ctx);
 }
 
 static void on_capture_monitor_btn(GtkButton *b, gpointer d)
@@ -928,23 +1011,18 @@ static void on_capture_monitor_btn(GtkButton *b, gpointer d)
         g_main_context_iteration(NULL, FALSE);
     g_usleep(80 * 1000);  /* compositor settle */
 
+    MonitorCaptureCtx *ctx = g_new(MonitorCaptureCtx, 1);
+    ctx->mw  = mw;
+    ctx->n   = n;
+    ctx->idx = idx;
+    memcpy(ctx->monitors, monitors, sizeof(monitors));
+
+    set_status(mw, "Capturing desktop…");
+
     SnapxCaptureRequest full_req = {0};
     full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
     full_req.include_cursor = mw->config->show_cursor;
-    SnapxImage *full_img = snapx_capture(mw->backend, &full_req);
-    SnapxImage *img = NULL;
-    if (full_img) {
-        img = snapx_image_crop_desktop(full_img,
-                                        monitors[idx].x, monitors[idx].y,
-                                        monitors[idx].width, monitors[idx].height,
-                                        monitors, n);
-        snapx_image_free(full_img);
-    }
-
-    char msg[64];
-    snprintf(msg, sizeof(msg), "Monitor %d captured (%d × %d).",
-             idx + 1, monitors[idx].width, monitors[idx].height);
-    after_capture(mw, img, msg);
+    snapx_capture_async(mw->backend, &full_req, monitor_capture_done, ctx);
 }
 
 static void on_capture_window(GtkButton *b, gpointer d)
@@ -992,21 +1070,7 @@ static void on_open_folder(GtkButton *b, gpointer d)
 {
     (void)b;
     MainWindow *mw = (MainWindow *)d;
-    const char *path = mw->config->save_dir;
-    if (mw->last_save_path[0]) {
-        char dir[512];
-        snprintf(dir, sizeof(dir), "%s", mw->last_save_path);
-        char *slash = strrchr(dir, '/');
-#ifdef SNAPX_PLATFORM_WINDOWS
-        char *bslash = strrchr(dir, '\\');
-        if (bslash > slash) slash = bslash;
-#endif
-        if (slash) {
-            *slash = '\0';
-            path = dir;
-        }
-    }
-    snapx_open_path_in_file_manager(mw, path);
+    snapx_open_path_in_file_manager(mw, mw->config->save_dir);
 }
 
 static void on_save(GtkButton *b, gpointer d)
@@ -1048,11 +1112,42 @@ static void on_save(GtkButton *b, gpointer d)
     }
 }
 
+static void on_format_changed(GObject *obj, GParamSpec *pspec, gpointer data);
+
+/** Sync action-bar widgets from config; clear stale save path if directory changed. */
+static void snapx_main_apply_config(MainWindow *mw, const char *prev_save_dir)
+{
+    if (!mw->config) return;
+
+    snapx_main_sync_wayland_prefer(mw);
+
+    if (prev_save_dir && strcmp(prev_save_dir, mw->config->save_dir) != 0)
+        mw->last_save_path[0] = '\0';
+
+    if (mw->format_combo) {
+#ifdef SNAPX_USE_GTK4
+        gtk_drop_down_set_selected(GTK_DROP_DOWN(mw->format_combo),
+                                   (guint)mw->config->default_format);
+        on_format_changed(G_OBJECT(mw->format_combo), NULL, mw);
+#else
+        gtk_combo_box_set_active(GTK_COMBO_BOX(mw->format_combo),
+                                 (int)mw->config->default_format);
+        on_format_changed(G_OBJECT(mw->format_combo), NULL, mw);
+#endif
+    }
+    if (mw->quality_scale)
+        gtk_range_set_value(GTK_RANGE(mw->quality_scale),
+                            (double)mw->config->jpeg_quality);
+}
+
 static void on_settings(GtkButton *b, gpointer d)
 {
     (void)b;
     MainWindow *mw = (MainWindow *)d;
+    char prev_save_dir[SNAPX_CONFIG_MAX_PATH];
+    snprintf(prev_save_dir, sizeof(prev_save_dir), "%s", mw->config->save_dir);
     snapx_settings_dialog_show(GTK_WINDOW(mw->win), mw->config);
+    snapx_main_apply_config(mw, prev_save_dir);
 }
 
 static void on_fit(GtkButton *b, gpointer d) { (void)b; set_fit((MainWindow *)d); }
@@ -1212,6 +1307,7 @@ void snapx_window_main_create(GtkApplication      *app,
     mw->default_mode = mode;
     mw->fit_mode     = TRUE;
     mw->zoom         = 1.0;
+    snapx_main_sync_wayland_prefer(mw);
 
     /* Load application CSS */
     load_css();

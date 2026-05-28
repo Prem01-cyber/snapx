@@ -281,6 +281,10 @@ int main(int argc, char **argv)
     fprintf(stderr, "[snapx] Backend: %s\n",
             snapx_backend_name(g_app.backend.type));
 
+    if (g_app.backend.type == SNAPX_BACKEND_WAYLAND)
+        snapx_capture_wayland_set_capture_prefer(&g_app.backend,
+            g_app.config.wayland_capture_prefer);
+
     /* Register global hotkey (best-effort) */
     snapx_hotkey_init(&g_app.config);
 

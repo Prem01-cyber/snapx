@@ -27,7 +27,7 @@ Windows 7/8/10/11, and macOS 10.13+.
 
 | Platform | Capture backend | GUI |
 |---|---|---|
-| Linux (Wayland) | XDG Desktop Portal + PipeWire | GTK4 / GTK3 |
+| Linux (Wayland) | XDG Screenshot portal (default); optional ScreenCast + PipeWire | GTK4 / GTK3 |
 | Linux (X11/Xorg) | libX11 + libXRandR + libXfixes | GTK4 / GTK3 |
 | Windows 10/11 | DXGI Desktop Duplication | GTK4 (via MSYS2) or Win32 |
 | Windows 7/8 | GDI BitBlt | GTK3 (via MSYS2) or Win32 |
@@ -220,17 +220,40 @@ Undo (`Ctrl+Z`) and redo (`Ctrl+Y`) are fully supported.
 
 ---
 
-## Troubleshooting (Wayland)
+## Wayland capture (Fedora / GNOME)
 
-### Two screenshots after region capture
+Third-party apps cannot use GNOME Shell’s private screenshot APIs. The closest match to **built-in Print Screen** on Fedora and GNOME is the same D-Bus API the desktop uses:
 
-snapx only writes a file when you click **Save**. If you see a **full-screen** image in `~/Pictures/Screenshots` as soon as you confirm a region, the desktop portal fell back to GNOME’s **Screenshot** API (which always saves to disk). The cropped file from **Save** is the intended snapx output.
+| Path | Like built-in? | snapx default | Notes |
+|------|----------------|---------------|-------|
+| **Screenshot** portal | Yes | **Primary** | Compositor captures to a temp `file://` URI; snapx loads pixels and deletes the file. May flash the screen briefly. |
+| **ScreenCast** + PipeWire | No | Optional fallback | One PipeWire frame (not recording). First time: system “what to share” dialog; `restore_token` can make later captures silent. |
 
-To fix this:
+Set `wayland_capture_prefer = screencast` in `~/.config/snapx/config.ini` under `[capture]` to try ScreenCast first (after PipeWire is working on your system).
 
-1. Run `./build/snapx` from a terminal and capture a region. stderr should show `Attempting ScreenCast portal capture...`, not `Using Screenshot portal...`.
-2. On first capture, approve **screen sharing** in the system dialog so snapx can store a `restore_token` under `~/.config/snapx/`.
-3. Ensure PipeWire and `xdg-desktop-portal` (with the GNOME or KDE backend) are installed.
+**Region** capture uses one full-desktop grab, then a **native 1:1 freeze overlay on each monitor** (not a shrunken map on one screen). Each overlay shows the correct slice of the screenshot using the same virtual-desktop→pixel mapping as crop (see `[overlay] monitor N slice px=…` in stderr), so you can drag across monitor edges accurately on HiDPI setups.
+
+Capture runs on a **background thread** so the GTK window stays responsive while the portal or PipeWire completes.
+
+### Terminal messages during capture
+
+| Message | Meaning |
+|---------|---------|
+| `Using Screenshot portal (GNOME/Fedora-style)...` | Default path — same API family as built-in screenshot. |
+| `Removed portal screenshot file: ...` | Temp PNG from the portal was loaded and deleted. |
+| `Attempting ScreenCast portal capture...` | Fallback or `wayland_capture_prefer=screencast`. |
+| `[wayland/pw] Format: WxH` | PipeWire negotiated a video format. |
+| `Captured WxH` | One frame read from PipeWire. |
+| Stuck at `capturing frame...` with no `Format:` | PipeWire never delivered a buffer; use default Screenshot path or update snapx. |
+
+### Files on disk
+
+snapx only writes when you click **Save**. The Screenshot portal may briefly create `Screenshot.png` under Pictures; snapx removes it after loading. ScreenCast avoids that temp file when it works.
+
+### Settings, Open folder, and clipboard
+
+- **Save directory** in Settings is applied when you click OK. **Open folder** always opens the configured save directory (not a previous save location).
+- **Auto copy to clipboard** is on by default for new installs. Each successful capture copies the image to the clipboard when this option is enabled in Settings → Output. Existing `config.ini` files keep their saved value until you change it.
 
 ---
 

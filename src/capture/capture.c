@@ -264,6 +264,47 @@ SnapxImage *snapx_capture(SnapxCaptureBackend *backend,
     return img;
 }
 
+#ifndef SNAPX_HEADLESS
+#  include <glib.h>
+
+typedef struct {
+    SnapxCaptureBackend  *backend;
+    SnapxCaptureRequest   req;
+    SnapxCaptureDoneFn    done;
+    void                 *userdata;
+    SnapxImage           *img;
+} SnapxCaptureJob;
+
+static gboolean snapx_capture_job_finish(gpointer data)
+{
+    SnapxCaptureJob *job = data;
+    job->done(job->img, job->userdata);
+    g_free(job);
+    return G_SOURCE_REMOVE;
+}
+
+static gpointer snapx_capture_job_thread(gpointer data)
+{
+    SnapxCaptureJob *job = data;
+    job->img = snapx_capture(job->backend, &job->req);
+    g_main_context_invoke(NULL, snapx_capture_job_finish, job);
+    return NULL;
+}
+
+void snapx_capture_async(SnapxCaptureBackend *backend,
+                          const SnapxCaptureRequest *req,
+                          SnapxCaptureDoneFn done, void *user_data)
+{
+    if (!backend || !req || !done) return;
+    SnapxCaptureJob *job = g_new0(SnapxCaptureJob, 1);
+    job->backend  = backend;
+    job->req      = *req;
+    job->done     = done;
+    job->userdata = user_data;
+    g_thread_new("snapx-capture", snapx_capture_job_thread, job);
+}
+#endif
+
 int snapx_get_monitors(SnapxCaptureBackend *backend,
                         SnapxMonitorInfo *out, int max)
 {

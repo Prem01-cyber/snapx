@@ -98,9 +98,10 @@ static void apply_defaults(SnapxConfig *c)
     c->default_mode    = SNAPX_CAPTURE_FULLSCREEN;
     c->default_delay   = 0;
     c->show_cursor     = 0;
+    c->wayland_capture_prefer = 0;  /* screenshot (default) */
     c->default_format  = SNAPX_FORMAT_PNG;
     c->jpeg_quality    = 90;
-    c->auto_clipboard  = 0;
+    c->auto_clipboard  = 1;
     c->play_sound      = 1;
     c->default_tool    = SNAPX_TOOL_RECT;
     c->default_color_r = 1.0;
@@ -145,6 +146,12 @@ static void parse_ini(FILE *fp, SnapxConfig *c)
         else if (strcmp(key, "default_mode")       == 0) c->default_mode    = (SnapxCaptureMode)atoi(val);
         else if (strcmp(key, "default_delay")      == 0) c->default_delay   = atoi(val);
         else if (strcmp(key, "show_cursor")        == 0) c->show_cursor     = atoi(val);
+        else if (strcmp(key, "wayland_capture_prefer") == 0) {
+            if (strcmp(val, "screencast") == 0)
+                c->wayland_capture_prefer = 1;
+            else
+                c->wayland_capture_prefer = 0;  /* screenshot (default) */
+        }
         else if (strcmp(key, "default_format")     == 0) c->default_format  = (SnapxOutputFormat)atoi(val);
         else if (strcmp(key, "jpeg_quality")       == 0) c->jpeg_quality    = atoi(val);
         else if (strcmp(key, "auto_clipboard")     == 0) c->auto_clipboard  = atoi(val);
@@ -206,6 +213,8 @@ void snapx_config_save(const SnapxConfig *config)
     fprintf(fp, "default_mode     = %d\n", (int)config->default_mode);
     fprintf(fp, "default_delay    = %d\n", config->default_delay);
     fprintf(fp, "show_cursor      = %d\n", config->show_cursor);
+    fprintf(fp, "wayland_capture_prefer = %s\n",
+            config->wayland_capture_prefer ? "screencast" : "screenshot");
     fprintf(fp, "\n[output]\n");
     fprintf(fp, "default_format   = %d\n", (int)config->default_format);
     fprintf(fp, "jpeg_quality     = %d\n", config->jpeg_quality);

@@ -2,15 +2,12 @@
  * @file capture_wayland.c
  * @brief Wayland capture backend via XDG ScreenCast portal + PipeWire.
  *
- * Primary path (used always):
- *   org.freedesktop.portal.ScreenCast  →  PipeWire raw-video stream
- *   We capture one frame ourselves — no GNOME screenshot UI involved.
- *   First call: system "what to share" picker.
- *   Subsequent calls with a restore_token: completely silent (no dialog).
+ * Primary path (default, Fedora/GNOME-like):
+ *   org.freedesktop.portal.Screenshot  →  compositor PNG via file:// URI
  *
- * Fallback:
- *   org.freedesktop.portal.Screenshot  (legacy, shows GNOME flash UI)
- *   Only used if ScreenCast/PipeWire fails.
+ * Optional fast/silent path (wayland_capture_prefer=screencast):
+ *   org.freedesktop.portal.ScreenCast  →  one PipeWire frame
+ *   First call: system "what to share" picker; restore_token skips picker later.
  */
 
 #ifdef SNAPX_HAVE_WAYLAND
@@ -53,6 +50,8 @@
 #  include <pipewire/pipewire.h>
 #  include <spa/param/video/format-utils.h>
 #  include <spa/param/video/type-info.h>
+#  include <spa/pod/builder.h>
+#  include <spa/support/loop.h>
 #  include <spa/debug/types.h>
 #endif
 
@@ -86,7 +85,25 @@ typedef struct {
 
     /* Parent window handle string ("x11:0x..." or "") */
     char             parent_window[128];
+
+    /* 0 = try Screenshot portal first; 1 = try ScreenCast first */
+    int              prefer_screencast;
+
+    /* Set when ScreenCast returns a new restore_token this session */
+    int              restore_token_dirty;
 } WaylandState;
+
+#ifdef SNAPX_HAVE_PIPEWIRE
+static gboolean snapx_pw_inited = FALSE;
+
+static void snapx_pw_ensure_init(void)
+{
+    if (!snapx_pw_inited) {
+        pw_init(NULL, NULL);
+        snapx_pw_inited = TRUE;
+    }
+}
+#endif
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -316,7 +333,7 @@ static SnapxImage *portal_screenshot_fallback(WaylandState *st)
     if (uri_v) {
         uri = g_variant_get_string(uri_v, NULL);
         fprintf(stderr,
-                "[wayland] Screenshot portal fallback — compositor wrote a file\n");
+                "[wayland] Screenshot portal — compositor wrote a file\n");
         SnapxImage *img = load_file_uri(uri);
         if (uri && strncmp(uri, "file://", 7) == 0) {
             GError *err = NULL;
@@ -356,6 +373,8 @@ typedef struct {
     int                    height;
     enum spa_video_format  fmt;
     gboolean               done;
+    gboolean               streaming;
+    gboolean               failed;
 } PwCapture;
 
 static void pw_on_process(void *data)
@@ -429,19 +448,80 @@ static void pw_on_param_changed(void *data, uint32_t id,
 
     fprintf(stderr, "[wayland/pw] Format: %dx%d fmt=%u\n",
             pc->width, pc->height, pc->fmt);
+
+    /* Confirm negotiated format so the compositor starts sending buffers. */
+    uint8_t buf[1024];
+    struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+    const struct spa_pod *fmt_pod =
+        spa_pod_builder_add_object(&b,
+            SPA_TYPE_OBJECT_Format, SPA_PARAM_Format,
+            SPA_FORMAT_mediaType,       SPA_POD_Id(SPA_MEDIA_TYPE_video),
+            SPA_FORMAT_mediaSubtype,    SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
+            SPA_FORMAT_VIDEO_format,    SPA_POD_Id(info.info.raw.format),
+            SPA_FORMAT_VIDEO_size,
+                SPA_POD_Rectangle(&SPA_RECTANGLE(
+                    info.info.raw.size.width, info.info.raw.size.height)),
+            SPA_FORMAT_VIDEO_framerate,
+                SPA_POD_Fraction(&SPA_FRACTION(0, 1)));
+    pw_stream_set_param(pc->stream, SPA_PARAM_Format, fmt_pod);
+}
+
+static void pw_on_state_changed(void *data, enum pw_stream_state old,
+                                 enum pw_stream_state state,
+                                 const char *error)
+{
+    (void)old;
+    PwCapture *pc = data;
+
+    if (state == PW_STREAM_STATE_STREAMING)
+        pc->streaming = TRUE;
+    if (state == PW_STREAM_STATE_ERROR) {
+        fprintf(stderr, "[wayland/pw] Stream error: %s\n",
+                error ? error : "(none)");
+        pc->failed = TRUE;
+    }
+    pw_thread_loop_signal(pc->tloop, FALSE);
 }
 
 static const struct pw_stream_events pw_stream_events = {
     PW_VERSION_STREAM_EVENTS,
+    .state_changed = pw_on_state_changed,
     .process       = pw_on_process,
     .param_changed = pw_on_param_changed,
 };
+
+typedef struct {
+    struct pw_stream  *stream;
+    struct pw_core    *core;
+    struct pw_context *ctx;
+} PwTeardown;
+
+static int pw_teardown_invoke(struct spa_loop *loop, bool async, uint32_t seq,
+                               const void *data, size_t size, void *user_data)
+{
+    (void)loop;
+    (void)async;
+    (void)seq;
+    (void)size;
+    (void)user_data;
+    const PwTeardown *t = data;
+
+    if (t->stream) {
+        pw_stream_disconnect(t->stream);
+        pw_stream_destroy(t->stream);
+    }
+    if (t->core)
+        pw_core_disconnect(t->core);
+    if (t->ctx)
+        pw_context_destroy(t->ctx);
+    return 0;
+}
 
 static SnapxImage *pw_capture_node(int pw_fd, uint32_t node_id)
 {
     PwCapture pc = {0};
 
-    pw_init(NULL, NULL);
+    snapx_pw_ensure_init();
 
     pc.tloop = pw_thread_loop_new("snapx-capture", NULL);
     if (!pc.tloop) { fprintf(stderr, "[pw] thread_loop_new failed\n"); return NULL; }
@@ -499,18 +579,25 @@ static SnapxImage *pw_capture_node(int pw_fd, uint32_t node_id)
 
     pw_thread_loop_start(pc.tloop);
 
-    /* Wait for one frame (max 10 seconds).
-     * pw_thread_loop_timed_wait(loop, max_sec) returns 0=OK, -ETIMEDOUT. */
-    if (!pc.done)
-        pw_thread_loop_timed_wait(pc.tloop, 10);
+    /* Wait for STREAMING, then one frame (max ~13 s total). */
+    for (int i = 0; i < 30 && !pc.streaming && !pc.failed && !pc.done; i++)
+        pw_thread_loop_timed_wait(pc.tloop, 0.1);
+    for (int i = 0; i < 100 && !pc.done && !pc.failed; i++)
+        pw_thread_loop_timed_wait(pc.tloop, 0.1);
 
-    pw_thread_loop_unlock(pc.tloop);
-    pw_stream_destroy(pc.stream);
-    pw_core_disconnect(core);
-    pw_context_destroy(ctx);
+    PwTeardown td = {
+        .stream = pc.stream,
+        .core   = core,
+        .ctx    = ctx,
+    };
+    pc.stream = NULL;
+    pw_loop_invoke(pw_thread_loop_get_loop(pc.tloop),
+                   pw_teardown_invoke, 0, &td, sizeof(td), true, NULL);
+    pw_thread_loop_timed_wait(pc.tloop, 0.5);
+
     pw_thread_loop_stop(pc.tloop);
+    pw_thread_loop_unlock(pc.tloop);
     pw_thread_loop_destroy(pc.tloop);
-    pw_deinit();
 
     return pc.result;
 }
@@ -533,20 +620,26 @@ static SnapxImage *portal_screencast_capture(WaylandState *st)
         return NULL;
     }
 
-    const char *session_handle_str = NULL;
+    char session_handle[256] = {0};
     GVariant *sh_v = g_variant_lookup_value(create_res, "session_handle",
-                                             G_VARIANT_TYPE_OBJECT_PATH);
-    if (sh_v) session_handle_str = g_variant_get_string(sh_v, NULL);
-
-    if (!session_handle_str) {
-        /* GNOME puts it directly in the results dict as object path string */
-        g_variant_unref(create_res);
-        fprintf(stderr, "[wayland/sc] No session_handle in CreateSession response\n");
-        return NULL;
+                                             G_VARIANT_TYPE_STRING);
+    if (!sh_v)
+        sh_v = g_variant_lookup_value(create_res, "session_handle",
+                                      G_VARIANT_TYPE_OBJECT_PATH);
+    if (sh_v) {
+        const char *h = g_variant_get_string(sh_v, NULL);
+        if (h && h[0])
+            snprintf(session_handle, sizeof(session_handle), "%s", h);
+        g_variant_unref(sh_v);
     }
-    char session_handle[256];
-    snprintf(session_handle, sizeof(session_handle), "%s", session_handle_str);
-    if (sh_v) g_variant_unref(sh_v);
+
+    if (session_handle[0] == '\0') {
+        snprintf(session_handle, sizeof(session_handle),
+                 "/org/freedesktop/portal/desktop/session/%s/%s",
+                 st->sender_token, sess_token);
+        fprintf(stderr,
+                "[wayland/sc] session_handle built from token (portal returned none)\n");
+    }
     g_variant_unref(create_res);
 
     fprintf(stderr, "[wayland/sc] Session: %s\n", session_handle);
@@ -621,6 +714,7 @@ static SnapxImage *portal_screencast_capture(WaylandState *st)
         snprintf(st->restore_token, sizeof(st->restore_token), "%s",
                  g_variant_get_string(rt_v, NULL));
         g_variant_unref(rt_v);
+        st->restore_token_dirty = 1;
         fprintf(stderr, "[wayland/sc] Saved restore_token for future silent captures\n");
     }
     g_variant_unref(start_res);
@@ -695,31 +789,49 @@ static SnapxImage *portal_screencast_capture(WaylandState *st)
 
 /* ─── Backend entry points ───────────────────────────────────────────────── */
 
+static SnapxImage *wayland_capture_screenshot(WaylandState *st)
+{
+    fprintf(stderr, "[wayland] Using Screenshot portal (GNOME/Fedora-style)...\n");
+    return portal_screenshot_fallback(st);
+}
+
+#ifdef SNAPX_HAVE_PIPEWIRE
+static SnapxImage *wayland_capture_screencast(WaylandState *st)
+{
+    if (st->parent_window[0] == '\0' && st->restore_token[0] == '\0') {
+        fprintf(stderr,
+                "[wayland] ScreenCast skipped (no parent window or restore_token)\n");
+        return NULL;
+    }
+    fprintf(stderr, "[wayland] Attempting ScreenCast portal capture...\n");
+    return portal_screencast_capture(st);
+}
+#endif
+
 static SnapxImage *wayland_capture(SnapxCaptureBackend *backend,
                                     const SnapxCaptureRequest *req)
 {
     WaylandState *st = (WaylandState *)backend->priv;
-    (void)req;  /* ScreenCast always captures full screen; region cropped above */
+    (void)req;
 
     SnapxImage *img = NULL;
 
-    /* ScreenCast: use when we have a parent handle (picker modal) or a saved
-     * restore_token (silent re-capture).  Avoid Screenshot portal — it writes a
-     * full-desktop PNG to disk before snapx crops the region. */
 #ifdef SNAPX_HAVE_PIPEWIRE
-    if (st->parent_window[0] != '\0' || st->restore_token[0] != '\0') {
-        fprintf(stderr, "[wayland] Attempting ScreenCast portal capture...\n");
-        img = portal_screencast_capture(st);
+    if (st->prefer_screencast) {
+        img = wayland_capture_screencast(st);
         if (img) return img;
         fprintf(stderr, "[wayland] ScreenCast failed — falling back to Screenshot portal\n");
-    } else {
-        fprintf(stderr,
-                "[wayland] No parent window or restore_token — ScreenCast skipped\n");
+        return wayland_capture_screenshot(st);
     }
 #endif
 
-    fprintf(stderr, "[wayland] Using Screenshot portal...\n");
-    img = portal_screenshot_fallback(st);
+    img = wayland_capture_screenshot(st);
+    if (img) return img;
+
+#ifdef SNAPX_HAVE_PIPEWIRE
+    fprintf(stderr, "[wayland] Screenshot portal failed — trying ScreenCast\n");
+    img = wayland_capture_screencast(st);
+#endif
     return img;
 }
 
@@ -822,6 +934,11 @@ int snapx_capture_wayland_init(SnapxCaptureBackend *backend)
     backend->get_monitors = wayland_get_monitors;
     backend->destroy      = wayland_destroy;
     backend->type         = SNAPX_BACKEND_WAYLAND;
+    st->prefer_screencast = 0;
+
+#ifdef SNAPX_HAVE_PIPEWIRE
+    snapx_pw_ensure_init();
+#endif
 
     fprintf(stderr, "[wayland] Backend initialised (token=%s)\n", st->sender_token);
     return 0;
@@ -838,13 +955,21 @@ void snapx_capture_wayland_set_parent_window(SnapxCaptureBackend *backend,
              parent_window_str ? parent_window_str : "");
 }
 
+void snapx_capture_wayland_set_capture_prefer(SnapxCaptureBackend *backend,
+                                               int prefer_screencast)
+{
+    if (!backend || !backend->priv) return;
+    WaylandState *st = (WaylandState *)backend->priv;
+    st->prefer_screencast = prefer_screencast ? 1 : 0;
+}
+
 /* ─── Restore token persistence ──────────────────────────────────────────── */
 
 void snapx_capture_wayland_save_token(SnapxCaptureBackend *backend)
 {
     if (!backend || !backend->priv) return;
     WaylandState *st = (WaylandState *)backend->priv;
-    if (!st->restore_token[0]) return;
+    if (!st->restore_token_dirty || !st->restore_token[0]) return;
 
     const char *home = g_get_home_dir();
     char dir_path[512];
@@ -858,6 +983,7 @@ void snapx_capture_wayland_save_token(SnapxCaptureBackend *backend)
         fprintf(tf, "%s\n", st->restore_token);
         fclose(tf);
         fprintf(stderr, "[wayland] Saved restore_token to %s\n", token_path);
+        st->restore_token_dirty = 0;
     }
 }
 
