@@ -100,6 +100,7 @@ typedef struct {
     /* Capture-mode / action buttons */
     GtkWidget *btn_fullscreen;
     GtkWidget *btn_region;
+    GtkWidget *btn_monitor;
     GtkWidget *btn_window;
     GtkWidget *btn_settings;
     GtkWidget *btn_fit;
@@ -553,42 +554,139 @@ static void on_capture_region(GtkButton *b, gpointer d)
     (void)b;
     MainWindow *mw = (MainWindow *)d;
 
-    /* ── Step 1: capture the full desktop silently ──────────────────────── */
-    /* Hide our window so it doesn't appear in the screenshot */
+    /* ── Step 1: hide main window ────────────────────────────────────────── */
     gtk_widget_set_visible(GTK_WIDGET(mw->win), FALSE);
-    while (g_main_context_iteration(NULL, FALSE)) {}
+    while (g_main_context_pending(NULL))
+        g_main_context_iteration(NULL, FALSE);
+    /* Small compositor settle so main window is fully off-screen */
+    g_usleep(80 * 1000);
 
-    SnapxCaptureRequest full_req = {0};
-    full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
-    full_req.include_cursor = FALSE;   /* don't freeze the cursor into the bg */
-    SnapxImage *full = snapx_capture(mw->backend, &full_req);
+    /* ── Step 2: decide overlay mode ─────────────────────────────────────── */
+    /*
+     * Wayland (and any backend that can't do live transparent windows):
+     *   Take a full-desktop freeze-frame FIRST, pass it to the overlay as a
+     *   background image.  This is exactly what Flameshot does on Wayland.
+     *   No grey screen, no guesswork about compositor transparency support.
+     *
+     * X11:
+     *   Pass NULL → overlay goes fully transparent via RGBA visual + CLEAR
+     *   operator.  The live desktop shows through the dim natively.
+     */
+    SnapxImage *full_bg = NULL;
 
-    gtk_widget_set_visible(GTK_WIDGET(mw->win), TRUE);
-    /* Don't present yet — overlay comes next */
+#if defined(SNAPX_PLATFORM_LINUX)
+    if (mw->backend->type != SNAPX_BACKEND_X11) {
+        /* Wayland / portal: pre-capture full virtual desktop */
+        set_status(mw, "Preparing region selector…");
+        while (g_main_context_pending(NULL))
+            g_main_context_iteration(NULL, FALSE);
 
-    if (!full) {
+        SnapxCaptureRequest bg_req = {0};
+        bg_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
+        bg_req.include_cursor = FALSE;  /* don't want cursor in background */
+        full_bg = snapx_capture(mw->backend, &bg_req);
+    }
+#elif defined(SNAPX_PLATFORM_WINDOWS) || defined(SNAPX_PLATFORM_MACOS)
+    {
+        /* On Windows/macOS always use freeze-frame too */
+        SnapxCaptureRequest bg_req = {0};
+        bg_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
+        bg_req.include_cursor = FALSE;
+        full_bg = snapx_capture(mw->backend, &bg_req);
+    }
+#endif
+
+    /* ── Step 3: show overlay ─────────────────────────────────────────────── */
+    SnapxRegion region = {0};
+    int ok = snapx_overlay_select_region(GTK_WINDOW(mw->win), full_bg, &region);
+
+    if (!ok) {
+        if (full_bg) snapx_image_free(full_bg);
+        gtk_widget_set_visible(GTK_WIDGET(mw->win), TRUE);
         gtk_window_present(GTK_WINDOW(mw->win));
-        set_status(mw, "Region capture failed: could not take background screenshot.");
         return;
     }
 
-    /* ── Step 2: show freeze-frame overlay for region selection ─────────── */
-    SnapxRegion region = {0};
-    int ok = snapx_overlay_select_region(GTK_WINDOW(mw->win), full, &region);
+    /* ── Step 4: produce the cropped result ──────────────────────────────── */
+    SnapxImage *img = NULL;
 
-    gtk_window_present(GTK_WINDOW(mw->win));
+    if (full_bg) {
+        /* We already have the full desktop image — just crop it */
+        img = snapx_image_crop(full_bg, region.x, region.y,
+                                region.width, region.height);
+        snapx_image_free(full_bg);
+        full_bg = NULL;
+    } else {
+        /* X11 transparent mode: brief settle then direct region capture */
+        while (g_main_context_pending(NULL))
+            g_main_context_iteration(NULL, FALSE);
+        g_usleep(80 * 1000);
 
-    if (!ok) {
-        snapx_image_free(full);
-        return;   /* user cancelled */
+        SnapxCaptureRequest req = {0};
+        req.mode           = SNAPX_CAPTURE_REGION;
+        req.region_x       = region.x;
+        req.region_y       = region.y;
+        req.region_w       = region.width;
+        req.region_h       = region.height;
+        req.include_cursor = mw->config->show_cursor;
+        img = snapx_capture(mw->backend, &req);
     }
 
-    /* ── Step 3: crop the full screenshot to the selected region ─────────── */
-    SnapxImage *cropped = snapx_image_crop(full, region.x, region.y,
-                                             region.width, region.height);
-    snapx_image_free(full);
+    after_capture(mw, img, "Region captured.");
+}
 
-    after_capture(mw, cropped, "Region captured.");
+static void on_capture_monitor_btn(GtkButton *b, gpointer d)
+{
+    (void)b;
+    MainWindow *mw = (MainWindow *)d;
+
+    /* Get monitor list from the backend */
+    SnapxMonitorInfo monitors[8] = {0};
+    int n = snapx_get_monitors(mw->backend, monitors, 8);
+    if (n <= 0) {
+        set_status(mw, "No monitors detected — try Screen capture instead.");
+        return;
+    }
+
+    /* Hide main window */
+    gtk_widget_set_visible(GTK_WIDGET(mw->win), FALSE);
+    while (g_main_context_iteration(NULL, FALSE)) {}
+
+    /* Show monitor picker overlay */
+    int idx = snapx_overlay_select_monitor(GTK_WINDOW(mw->win), monitors, n);
+
+    if (idx < 0) {
+        gtk_widget_set_visible(GTK_WIDGET(mw->win), TRUE);
+        gtk_window_present(GTK_WINDOW(mw->win));
+        return;
+    }
+
+    /*
+     * Wayland backends only support full-desktop capture; they ignore req.mode.
+     * Capture the full desktop and crop to the selected monitor's rectangle.
+     * On X11 the backend handles SNAPX_CAPTURE_MONITOR natively, but doing
+     * full+crop also works, so we use the same path everywhere for simplicity.
+     */
+    while (g_main_context_pending(NULL))
+        g_main_context_iteration(NULL, FALSE);
+    g_usleep(80 * 1000);  /* compositor settle */
+
+    SnapxCaptureRequest full_req = {0};
+    full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
+    full_req.include_cursor = mw->config->show_cursor;
+    SnapxImage *full_img = snapx_capture(mw->backend, &full_req);
+    SnapxImage *img = NULL;
+    if (full_img) {
+        img = snapx_image_crop(full_img,
+                                monitors[idx].x,  monitors[idx].y,
+                                monitors[idx].width, monitors[idx].height);
+        snapx_image_free(full_img);
+    }
+
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Monitor %d captured (%d × %d).",
+             idx + 1, monitors[idx].width, monitors[idx].height);
+    after_capture(mw, img, msg);
 }
 
 static void on_capture_window(GtkButton *b, gpointer d)
@@ -829,6 +927,7 @@ void snapx_window_main_create(GtkApplication      *app,
 
     mw->btn_fullscreen = gtk_button_new_with_label("Screen");
     mw->btn_region     = gtk_button_new_with_label("Region");
+    mw->btn_monitor    = gtk_button_new_with_label("Monitor");
     mw->btn_window     = gtk_button_new_with_label("Window");
     mw->btn_settings   = gtk_button_new_with_label("Settings");
     mw->btn_fit        = gtk_button_new_with_label("Fit");
@@ -836,42 +935,39 @@ void snapx_window_main_create(GtkApplication      *app,
 
     gtk_widget_add_css_class(mw->btn_fullscreen, "snapx-capture");
     gtk_widget_add_css_class(mw->btn_region,     "snapx-capture");
+    gtk_widget_add_css_class(mw->btn_monitor,    "snapx-capture");
     gtk_widget_add_css_class(mw->btn_window,     "snapx-capture");
 
     gtk_widget_set_tooltip_text(mw->btn_fullscreen,
-        "Capture full screen  (PrintScreen)");
+        "Capture full screen — all monitors  (PrintScreen)");
     gtk_widget_set_tooltip_text(mw->btn_region,
-        "Select a region with mouse  (Shift+PrintScreen)");
+        "Draw a selection region  (Shift+PrintScreen)");
+    gtk_widget_set_tooltip_text(mw->btn_monitor,
+        "Pick a specific monitor to capture");
     gtk_widget_set_tooltip_text(mw->btn_window,
-        "Capture active window  (Alt+PrintScreen)");
+        "Capture the active window  (Alt+PrintScreen)");
     gtk_widget_set_tooltip_text(mw->btn_fit,
         "Reset zoom to fit window  (Ctrl+0)");
     gtk_widget_set_tooltip_text(mw->zoom_label,
         "Current zoom level.  Ctrl+scroll or Ctrl +/- to change.");
 
-#ifdef SNAPX_USE_GTK4
+    /* All GTK versions share the same header layout */
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), mw->btn_fullscreen);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), mw->btn_region);
+    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), mw->btn_monitor);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), mw->btn_window);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), mw->btn_settings);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), mw->zoom_label);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), mw->btn_fit);
-#else
-    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), mw->btn_fullscreen);
-    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), mw->btn_region);
-    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), mw->btn_window);
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), mw->btn_settings);
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), mw->zoom_label);
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), mw->btn_fit);
-#endif
 
     gtk_widget_add_css_class(mw->zoom_label, "snapx-zoom");
 
-    g_signal_connect(mw->btn_fullscreen, "clicked", G_CALLBACK(on_capture_fullscreen), mw);
-    g_signal_connect(mw->btn_region,     "clicked", G_CALLBACK(on_capture_region),     mw);
-    g_signal_connect(mw->btn_window,     "clicked", G_CALLBACK(on_capture_window),     mw);
-    g_signal_connect(mw->btn_settings,   "clicked", G_CALLBACK(on_settings),           mw);
-    g_signal_connect(mw->btn_fit,        "clicked", G_CALLBACK(on_fit),                mw);
+    g_signal_connect(mw->btn_fullscreen, "clicked", G_CALLBACK(on_capture_fullscreen),   mw);
+    g_signal_connect(mw->btn_region,     "clicked", G_CALLBACK(on_capture_region),       mw);
+    g_signal_connect(mw->btn_monitor,    "clicked", G_CALLBACK(on_capture_monitor_btn),  mw);
+    g_signal_connect(mw->btn_window,     "clicked", G_CALLBACK(on_capture_window),       mw);
+    g_signal_connect(mw->btn_settings,   "clicked", G_CALLBACK(on_settings),             mw);
+    g_signal_connect(mw->btn_fit,        "clicked", G_CALLBACK(on_fit),                  mw);
 
     /* ── Main vertical box ───────────────────────────────────────────────── */
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
