@@ -1,0 +1,46 @@
+# Maintainer: snapx Team <snapx@example.com>
+pkgname=snapx
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Lightweight cross-platform screenshot utility"
+arch=('x86_64' 'aarch64')
+url="https://github.com/snapx/snapx"
+license=('MIT')
+depends=(
+    'gtk4'
+    'cairo'
+    'glib2'
+    'gdk-pixbuf2'
+    'libx11'
+    'libxrandr'
+    'libxfixes'
+    'libpng'
+    'libjpeg-turbo'
+    'libwebp'
+    'pipewire'
+    'dbus'
+)
+makedepends=('cmake' 'git')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/snapx/snapx/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cmake -B build -S "$pkgname-$pkgver" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr
+    cmake --build build
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+    install -Dm644 "$pkgname-$pkgver/packaging/linux/snapx.desktop" \
+        "$pkgdir/usr/share/applications/snapx.desktop"
+    install -Dm644 "$pkgname-$pkgver/resources/icons/snapx.svg" \
+        "$pkgdir/usr/share/icons/hicolor/scalable/apps/snapx.svg"
+    for size in 16 32 48 64 128 256; do
+        install -Dm644 \
+            "$pkgname-$pkgver/resources/icons/${size}x${size}/apps/snapx.png" \
+            "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/snapx.png"
+    done
+    install -Dm644 "$pkgname-$pkgver/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -1,0 +1,27 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=snapx
+GenericName=Screenshot Tool
+Comment=Lightweight cross-platform screenshot utility
+Exec=snapx %F
+Icon=snapx
+Terminal=false
+Categories=Graphics;Photography;Utility;
+Keywords=screenshot;capture;screen;annotate;region;
+StartupNotify=true
+StartupWMClass=snapx
+MimeType=image/png;image/jpeg;image/webp;
+Actions=FullScreen;Region;Window;
+
+[Desktop Action FullScreen]
+Name=Capture Full Screen
+Exec=snapx --mode fullscreen --no-gui --clipboard
+
+[Desktop Action Region]
+Name=Capture Region
+Exec=snapx --mode region
+
+[Desktop Action Window]
+Name=Capture Active Window
+Exec=snapx --mode active --no-gui --clipboard

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.snapx</string>
+
+    <key>CFBundleName</key>
+    <string>snapx</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>snapx</string>
+
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+
+    <key>CFBundleExecutable</key>
+    <string>snapx</string>
+
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleSignature</key>
+    <string>????</string>
+
+    <key>LSMinimumSystemVersion</key>
+    <string>10.13</string>
+
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+
+    <!-- Screen recording permission (required for macOS 10.15+) -->
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>snapx needs screen recording access to capture screenshots of your display.</string>
+
+    <!-- Accessibility for global hotkey via CGEventTap -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>snapx uses accessibility features to register a global keyboard shortcut.</string>
+
+    <!-- Allow running from non-standard locations -->
+    <key>LSEnvironment</key>
+    <dict>
+        <key>DYLD_LIBRARY_PATH</key>
+        <string>@executable_path/../Frameworks</string>
+    </dict>
+
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <key>NSApplicationActivationPolicy</key>
+    <string>NSApplicationActivationPolicyRegular</string>
+
+    <!-- Document types -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>png</string>
+                <string>jpg</string>
+                <string>jpeg</string>
+                <string>webp</string>
+            </array>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>None</string>
+        </dict>
+    </array>
+</dict>
+</plist>

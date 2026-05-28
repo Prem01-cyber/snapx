@@ -1,0 +1,57 @@
+# Build
+build/
+cmake-build-*/
+out/
+*.o
+*.a
+*.so
+*.so.*
+snapx
+
+# CMake / generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+snapx_resources.c
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+compile_commands.json
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local config / runtime (created by snapx)
+.config/snapx/
+
+# Local test captures
+/test-output/
+screenshot*.png
+snapx_test*.png
+
+# Packaging artifacts
+*.deb
+*.rpm
+*.pkg.tar.*
+*.dmg
+*.exe
+*.msi
+dist/
+rpmbuild/
+
+# Logs / temp
+*.log
+/tmp/
+
+# Secrets
+.env
+*.pem
