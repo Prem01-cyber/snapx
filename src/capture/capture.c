@@ -1,9 +1,12 @@
 /**
  * @file capture.c
- * @brief Common capture API: image allocation, backend dispatch, delay logic.
+ * @brief Common capture API: image allocation, backend init with fallback,
+ *        delay logic, and backend dispatch.
  */
 
 #include "capture.h"
+#include "platform.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -43,7 +46,7 @@ void snapx_image_free(SnapxImage *img)
     free(img);
 }
 
-/* ─── Backend router ─────────────────────────────────────────────────────── */
+/* ─── Backend init ───────────────────────────────────────────────────────── */
 
 int snapx_capture_backend_init(SnapxCaptureBackend *backend, SnapxBackendType type)
 {
@@ -71,12 +74,47 @@ int snapx_capture_backend_init(SnapxCaptureBackend *backend, SnapxBackendType ty
             return snapx_capture_macos_init(backend);
 #endif
         default:
-            fprintf(stderr, "[capture] No backend available for type %d\n", type);
+            fprintf(stderr, "[capture] No backend compiled in for type %d (%s)\n",
+                    type, snapx_backend_name(type));
             return -1;
     }
 }
 
-SnapxImage *snapx_capture(SnapxCaptureBackend *backend, const SnapxCaptureRequest *req)
+/**
+ * @brief Init the best available backend using the platform probe result.
+ *
+ * Tries info->preferred first, then info->fallback.
+ * Returns 0 on success with @p backend populated.
+ */
+int snapx_capture_backend_init_best(SnapxCaptureBackend *backend,
+                                     const SnapxPlatformInfo *info)
+{
+    if (!backend || !info) return -1;
+
+    if (info->preferred != SNAPX_BACKEND_UNKNOWN) {
+        fprintf(stderr, "[capture] Trying backend: %s\n",
+                snapx_backend_name(info->preferred));
+        if (snapx_capture_backend_init(backend, info->preferred) == 0)
+            return 0;
+        fprintf(stderr, "[capture] Backend init failed.\n");
+    }
+
+    if (info->fallback != SNAPX_BACKEND_UNKNOWN) {
+        fprintf(stderr, "[capture] Trying fallback: %s\n",
+                snapx_backend_name(info->fallback));
+        if (snapx_capture_backend_init(backend, info->fallback) == 0)
+            return 0;
+        fprintf(stderr, "[capture] Fallback init failed.\n");
+    }
+
+    fprintf(stderr, "[capture] ERROR: All backends exhausted. Cannot capture.\n");
+    return -1;
+}
+
+/* ─── Capture with automatic fallback on failure ─────────────────────────── */
+
+SnapxImage *snapx_capture(SnapxCaptureBackend *backend,
+                           const SnapxCaptureRequest *req)
 {
     if (!backend || !backend->capture || !req) return NULL;
 
@@ -89,10 +127,69 @@ SnapxImage *snapx_capture(SnapxCaptureBackend *backend, const SnapxCaptureReques
 #endif
     }
 
-    return backend->capture(backend, req);
+    SnapxImage *img = backend->capture(backend, req);
+
+    /* On Linux: if Wayland portal timed-out/failed, silently retry on X11 */
+#if defined(SNAPX_PLATFORM_LINUX) && defined(SNAPX_HAVE_X11)
+    if (!img && backend->type == SNAPX_BACKEND_WAYLAND) {
+        const char *xd = getenv("DISPLAY");
+        if (xd && xd[0]) {
+            fprintf(stderr, "[capture] Wayland capture failed — "
+                    "retrying on X11/Xwayland...\n");
+            SnapxCaptureBackend x11 = {0};
+            if (snapx_capture_backend_init(&x11, SNAPX_BACKEND_X11) == 0) {
+                img = x11.capture(&x11, req);
+                if (img) {
+                    snapx_capture_backend_destroy(backend);
+                    *backend = x11;
+                } else {
+                    snapx_capture_backend_destroy(&x11);
+                }
+            }
+        }
+    }
+#endif
+
+#if defined(SNAPX_PLATFORM_WINDOWS)
+    /* On Windows: DXGI can fail for protected content / some virtual desktops */
+    if (!img && backend->type == SNAPX_BACKEND_WIN_DXGI) {
+        fprintf(stderr, "[capture] DXGI capture failed — retrying with GDI...\n");
+        SnapxCaptureBackend gdi = {0};
+        if (snapx_capture_backend_init(&gdi, SNAPX_BACKEND_WIN_GDI) == 0) {
+            img = gdi.capture(&gdi, req);
+            if (img) {
+                snapx_capture_backend_destroy(backend);
+                *backend = gdi;
+            } else {
+                snapx_capture_backend_destroy(&gdi);
+            }
+        }
+    }
+#endif
+
+#if defined(SNAPX_PLATFORM_MACOS)
+    /* On macOS: SCK can fail without screen recording permission */
+    if (!img && backend->type == SNAPX_BACKEND_MACOS_SCK) {
+        fprintf(stderr, "[capture] ScreenCaptureKit failed — "
+                "retrying with CoreGraphics...\n");
+        SnapxCaptureBackend cg = {0};
+        if (snapx_capture_backend_init(&cg, SNAPX_BACKEND_MACOS_CG) == 0) {
+            img = cg.capture(&cg, req);
+            if (img) {
+                snapx_capture_backend_destroy(backend);
+                *backend = cg;
+            } else {
+                snapx_capture_backend_destroy(&cg);
+            }
+        }
+    }
+#endif
+
+    return img;
 }
 
-int snapx_get_monitors(SnapxCaptureBackend *backend, SnapxMonitorInfo *out, int max)
+int snapx_get_monitors(SnapxCaptureBackend *backend,
+                        SnapxMonitorInfo *out, int max)
 {
     if (!backend || !backend->get_monitors || !out || max <= 0) return -1;
     return backend->get_monitors(backend, out, max);

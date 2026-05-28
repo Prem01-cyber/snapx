@@ -157,7 +157,12 @@ struct SnapxCaptureBackend {
  * @param type     Requested backend type.
  * @return 0 on success, non-zero on failure.
  */
-int snapx_capture_backend_init(SnapxCaptureBackend *backend, SnapxBackendType type);
+int  snapx_capture_backend_init(SnapxCaptureBackend *backend, SnapxBackendType type);
+
+/* Forward reference to SnapxPlatformInfo (defined in platform.h) */
+struct SnapxPlatformInfo;
+int  snapx_capture_backend_init_best(SnapxCaptureBackend *backend,
+                                      const struct SnapxPlatformInfo *info);
 
 /**
  * @brief Perform a capture.  Wraps @c backend->capture with delay handling.

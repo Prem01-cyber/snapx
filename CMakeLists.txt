@@ -193,6 +193,9 @@ if(NOT SNAPX_HEADLESS_ONLY)
     )
 endif()
 
+# Platform detection module (always included)
+list(APPEND SOURCES src/capture/platform.c)
+
 # Platform capture backends
 if(PLATFORM_LINUX)
     list(APPEND SOURCES src/capture/capture_x11.c)
