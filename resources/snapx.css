@@ -1,0 +1,99 @@
+/*
+ * snapx.css — Application stylesheet
+ *
+ * Targets GTK 4.  The key design decisions:
+ *  - Dark workspace for the image preview (reduces glare, improves contrast).
+ *  - Accent colour on the active annotation tool so the user always knows
+ *    what mode they're in.
+ *  - Compact but readable controls in the header and action-bar.
+ *  - All sizing in `em` / logical pixels — scales with system font size.
+ */
+
+/* ─── Canvas workspace ───────────────────────────────────────────────────── */
+
+.snapx-canvas {
+  background-color: #18181b;
+}
+
+/* ─── Annotation toolbar ─────────────────────────────────────────────────── */
+
+.snapx-toolbar {
+  background-color: alpha(@theme_bg_color, 0.97);
+  border-bottom: 1px solid alpha(@borders, 0.6);
+  padding: 3px 8px;
+}
+
+/* Tool toggle buttons */
+.snapx-tool {
+  min-width:    3.6em;
+  min-height:   1.9em;
+  padding:      3px 8px;
+  border-radius: 6px;
+  font-size:    0.85em;
+  transition:   background-color 100ms ease,
+                color 100ms ease;
+}
+
+/* Active (checked) state — use the system accent colour when available */
+.snapx-tool:checked,
+.snapx-tool.active {
+  background-color: @accent_bg_color;
+  color:            @accent_fg_color;
+  font-weight:      600;
+}
+
+/* Undo / Redo share the same look as tool buttons */
+.snapx-undoredo {
+  min-width:    3.2em;
+  min-height:   1.9em;
+  padding:      3px 8px;
+  border-radius: 6px;
+  font-size:    0.85em;
+}
+
+/* ─── Header-bar capture buttons ─────────────────────────────────────────── */
+
+.snapx-capture {
+  font-weight:  600;
+  padding:      4px 14px;
+  border-radius: 8px;
+}
+
+/* ─── Bottom action bar ──────────────────────────────────────────────────── */
+
+.snapx-actionbar {
+  border-top: 1px solid alpha(@borders, 0.6);
+  padding: 4px 8px;
+}
+
+.snapx-format-label {
+  font-size: 0.85em;
+  color: alpha(@theme_fg_color, 0.75);
+  margin-right: 4px;
+}
+
+/* ─── Status / info bar ──────────────────────────────────────────────────── */
+
+.snapx-statusbar {
+  font-size: 0.78em;
+  color: alpha(@theme_fg_color, 0.55);
+  padding: 2px 10px 3px;
+  border-top: 1px solid alpha(@borders, 0.3);
+}
+
+/* ─── Zoom indicator ─────────────────────────────────────────────────────── */
+
+.snapx-zoom {
+  font-size:    0.82em;
+  font-variant-numeric: tabular-nums;
+  color: alpha(@theme_fg_color, 0.6);
+  min-width: 4.5em;
+  margin-right: 4px;
+}
+
+/* ─── Welcome placeholder text (rendered by Cairo, but overlay panel) ────── */
+
+.snapx-welcome {
+  font-size: 1.1em;
+  color: alpha(@theme_fg_color, 0.35);
+}

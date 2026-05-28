@@ -1,11 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
   <gresource prefix="/io/github/snapx">
-    <file alias="icons/snapx-16.png">icons/16x16/apps/snapx.png</file>
-    <file alias="icons/snapx-32.png">icons/32x32/apps/snapx.png</file>
-    <file alias="icons/snapx-48.png">icons/48x48/apps/snapx.png</file>
-    <file alias="icons/snapx-64.png">icons/64x64/apps/snapx.png</file>
-    <file alias="icons/snapx-128.png">icons/128x128/apps/snapx.png</file>
-    <file alias="icons/snapx-256.png">icons/256x256/apps/snapx.png</file>
+    <file alias="style/snapx.css">snapx.css</file>
   </gresource>
 </gresources>
