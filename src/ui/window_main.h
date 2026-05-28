@@ -38,4 +38,10 @@ void snapx_window_main_set_image(SnapxImage *img);
 /** Request a single coalesced redraw of the preview/annotation canvas. */
 void snapx_main_schedule_redraw(void);
 
+/**
+ * Convert drawing-area coordinates to image pixel coordinates.
+ * Use before passing points to the annotation canvas.
+ */
+void snapx_main_widget_to_image(double wx, double wy, double *ix, double *iy);
+
 #endif /* SNAPX_WINDOW_MAIN_H */

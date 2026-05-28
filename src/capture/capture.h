@@ -193,6 +193,18 @@ void snapx_capture_backend_destroy(SnapxCaptureBackend *backend);
 SnapxImage *snapx_image_crop(const SnapxImage *src,
                                int x, int y, int w, int h);
 
+/**
+ * @brief Crop a region given in virtual-desktop (logical) coordinates.
+ *
+ * Maps @p region_* through monitor layout bounds to pixel coordinates on
+ * @p src (e.g. a full-desktop PipeWire frame).  Use after region overlay.
+ */
+SnapxImage *snapx_image_crop_desktop(const SnapxImage *src,
+                                      int region_x, int region_y,
+                                      int region_w, int region_h,
+                                      const SnapxMonitorInfo *mons,
+                                      int n_monitors);
+
 /* ─── Backend init declarations (called by snapx_capture_backend_init) ───── */
 int snapx_capture_x11_init(SnapxCaptureBackend *backend);
 int  snapx_capture_wayland_init(SnapxCaptureBackend *backend);

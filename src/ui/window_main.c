@@ -39,6 +39,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <errno.h>
 
 #ifdef GDK_WINDOWING_X11
 #  include <gdk/x11/gdkx.h>
@@ -113,6 +114,14 @@ typedef struct {
     GtkWidget *btn_window;
     GtkWidget *btn_settings;
     GtkWidget *btn_fit;
+
+    char last_save_path[512];  /**< Last successful save (for reveal in folder) */
+
+    /** Cached XDG parent handle ("x11:0x…" or "wayland:…") for portal modals */
+    char portal_parent[128];
+    /** Raw Wayland export handle (for gdk_wayland_toplevel_drop_exported_handle) */
+    char wayland_exported_raw[64];
+    GMainLoop *portal_export_loop;  /**< Non-NULL while blocking for export callback */
 } MainWindow;
 
 static MainWindow g_win;
@@ -208,6 +217,46 @@ static void compute_viewport(MainWindow *mw, int cw, int ch,
     *out_scale = scale;
     *out_ox = ((double)cw - iw * scale) / 2.0 - mw->pan_x * scale;
     *out_oy = ((double)ch - ih * scale) / 2.0 - mw->pan_y * scale;
+}
+
+/** Map drawing-area widget coords to image pixel coords (inverse of viewport). */
+static void widget_to_image_coords(MainWindow *mw, double wx, double wy,
+                                    double *ix, double *iy)
+{
+    if (!mw->current_image || !mw->drawing_area) {
+        *ix = wx;
+        *iy = wy;
+        return;
+    }
+    int cw, ch;
+#ifdef SNAPX_USE_GTK4
+    cw = gtk_widget_get_width(mw->drawing_area);
+    ch = gtk_widget_get_height(mw->drawing_area);
+#else
+    GtkAllocation a;
+    gtk_widget_get_allocation(mw->drawing_area, &a);
+    cw = a.width;
+    ch = a.height;
+#endif
+    if (cw <= 0 || ch <= 0) {
+        *ix = wx;
+        *iy = wy;
+        return;
+    }
+    double scale, ox, oy;
+    compute_viewport(mw, cw, ch, &scale, &ox, &oy);
+    if (scale <= 0.0) {
+        *ix = wx;
+        *iy = wy;
+        return;
+    }
+    *ix = (wx - ox) / scale;
+    *iy = (wy - oy) / scale;
+}
+
+void snapx_main_widget_to_image(double wx, double wy, double *ix, double *iy)
+{
+    widget_to_image_coords(&g_win, wx, wy, ix, iy);
 }
 
 /** Cached 24×24 checkerboard tile (built once, tiled in rebuild_scaled). */
@@ -462,20 +511,115 @@ static void redraw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
 
 /* ─── Portal parent window helper ─────────────────────────────────────────── */
 
-static void update_portal_parent(MainWindow *mw)
+#ifdef GDK_WINDOWING_WAYLAND
+static void portal_wayland_exported(GdkToplevel *toplevel,
+                                     const char *handle,
+                                     gpointer user_data)
+{
+    (void)toplevel;
+    MainWindow *mw = (MainWindow *)user_data;
+    if (!handle || !handle[0]) return;
+
+    snprintf(mw->portal_parent, sizeof(mw->portal_parent), "wayland:%s", handle);
+    snprintf(mw->wayland_exported_raw, sizeof(mw->wayland_exported_raw),
+             "%s", handle);
+
+    if (mw->backend && mw->backend->type == SNAPX_BACKEND_WAYLAND)
+        snapx_capture_wayland_set_parent_window(mw->backend, mw->portal_parent);
+
+    if (mw->portal_export_loop)
+        g_main_loop_quit(mw->portal_export_loop);
+}
+#endif
+
+/**
+ * Ensure the Wayland backend has a valid XDG parent_window handle.
+ * @p blocking  If TRUE, wait (main-loop) until Wayland export completes.
+ */
+static void ensure_portal_parent(MainWindow *mw, gboolean blocking)
 {
     if (!mw->backend || mw->backend->type != SNAPX_BACKEND_WAYLAND) return;
-    char parent[128] = "";
+
     GdkSurface *surf = gtk_native_get_surface(GTK_NATIVE(mw->win));
+    if (!surf) {
+        snapx_capture_wayland_set_parent_window(mw->backend, mw->portal_parent);
+        return;
+    }
+
 #ifdef GDK_WINDOWING_X11
     if (GDK_IS_X11_SURFACE(surf)) {
         G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         guint32 xid = (guint32)gdk_x11_surface_get_xid(surf);
         G_GNUC_END_IGNORE_DEPRECATIONS
-        snprintf(parent, sizeof(parent), "x11:0x%x", xid);
+        snprintf(mw->portal_parent, sizeof(mw->portal_parent), "x11:0x%x", xid);
+        snapx_capture_wayland_set_parent_window(mw->backend, mw->portal_parent);
+        return;
     }
 #endif
-    snapx_capture_wayland_set_parent_window(mw->backend, parent);
+
+#ifdef GDK_WINDOWING_WAYLAND
+    if (GDK_IS_WAYLAND_SURFACE(surf) && GDK_IS_TOPLEVEL(surf)) {
+        if (mw->portal_parent[0] != '\0') {
+            snapx_capture_wayland_set_parent_window(mw->backend, mw->portal_parent);
+            return;
+        }
+        if (!gtk_widget_get_mapped(GTK_WIDGET(mw->win)))
+            return;
+
+        GdkToplevel *top = GDK_TOPLEVEL(surf);
+        if (!gdk_wayland_toplevel_export_handle(top, portal_wayland_exported,
+                                                mw, NULL))
+            return;
+
+        if (blocking && mw->portal_parent[0] == '\0') {
+            mw->portal_export_loop = g_main_loop_new(NULL, FALSE);
+            g_main_loop_run(mw->portal_export_loop);
+            g_main_loop_unref(mw->portal_export_loop);
+            mw->portal_export_loop = NULL;
+        }
+        return;
+    }
+#endif
+
+    snapx_capture_wayland_set_parent_window(mw->backend, mw->portal_parent);
+}
+
+static void update_portal_parent(MainWindow *mw)
+{
+    ensure_portal_parent(mw, FALSE);
+}
+
+static gboolean portal_parent_on_mapped(gpointer data)
+{
+    MainWindow *mw = (MainWindow *)data;
+    if (!gtk_widget_get_mapped(GTK_WIDGET(mw->win)))
+        return G_SOURCE_CONTINUE;
+    ensure_portal_parent(mw, TRUE);
+    return G_SOURCE_REMOVE;
+}
+
+static void portal_parent_drop_export(MainWindow *mw)
+{
+#ifdef GDK_WINDOWING_WAYLAND
+    if (!mw->wayland_exported_raw[0]) return;
+    GdkSurface *surf = gtk_native_get_surface(GTK_NATIVE(mw->win));
+    if (surf && GDK_IS_WAYLAND_SURFACE(surf) && GDK_IS_TOPLEVEL(surf)) {
+#if GTK_CHECK_VERSION(4, 12, 0)
+        gdk_wayland_toplevel_drop_exported_handle(GDK_TOPLEVEL(surf),
+                                                 mw->wayland_exported_raw);
+#else
+        gdk_wayland_toplevel_unexport_handle(GDK_TOPLEVEL(surf));
+#endif
+    }
+    mw->wayland_exported_raw[0] = '\0';
+    mw->portal_parent[0]       = '\0';
+#endif
+}
+
+static void on_win_destroy(GtkWidget *widget, gpointer data)
+{
+    (void)widget;
+    portal_parent_drop_export((MainWindow *)data);
 }
 
 /* ─── Status bar ──────────────────────────────────────────────────────────── */
@@ -652,11 +796,13 @@ static void snapx_restore_window_state(MainWindow *mw)
 /** Hide main window and settle before portal/X11 capture (no snapx UI in shot). */
 static void snapx_hide_for_capture(MainWindow *mw)
 {
+    /* Refresh portal parent while the window is still mapped (Wayland export). */
+    if (gtk_widget_get_visible(GTK_WIDGET(mw->win)))
+        ensure_portal_parent(mw, TRUE);
+
     if (gtk_widget_get_visible(GTK_WIDGET(mw->win)))
         snapx_save_window_state(mw);
     gtk_widget_set_visible(GTK_WIDGET(mw->win), FALSE);
-    if (mw->backend && mw->backend->type == SNAPX_BACKEND_WAYLAND)
-        snapx_capture_wayland_set_parent_window(mw->backend, "");
     for (int i = 0; i < 15; i++)
         g_main_context_iteration(NULL, FALSE);
     g_usleep(200 * 1000);
@@ -718,72 +864,35 @@ static void on_capture_region(GtkButton *b, gpointer d)
     (void)b;
     MainWindow *mw = (MainWindow *)d;
 
-    /* Hide snapx before any capture so it is not in the freeze-frame or final shot */
     snapx_hide_for_capture(mw);
 
-    /*
-     * Freeze-frame (overlay UX only): full virtual desktop for Wayland/Win/macOS.
-     * X11 uses NULL → live transparent overlay.
-     * Final image comes from a second capture after the overlay closes.
-     */
-    SnapxImage *full_bg = NULL;
-
-#if defined(SNAPX_PLATFORM_LINUX)
-    if (mw->backend->type != SNAPX_BACKEND_X11) {
-        SnapxCaptureRequest bg_req = {0};
-        bg_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
-        bg_req.include_cursor = FALSE;
-        full_bg = snapx_capture(mw->backend, &bg_req);
+    SnapxCaptureRequest full_req = {0};
+    full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
+    full_req.include_cursor = mw->config->show_cursor;
+    SnapxImage *full = snapx_capture(mw->backend, &full_req);
+    if (!full) {
+        snapx_restore_window_state(mw);
+        set_status(mw, "Capture failed — check backend with snapx --info.");
+        return;
     }
-#elif defined(SNAPX_PLATFORM_WINDOWS) || defined(SNAPX_PLATFORM_MACOS)
-    {
-        SnapxCaptureRequest bg_req = {0};
-        bg_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
-        bg_req.include_cursor = FALSE;
-        full_bg = snapx_capture(mw->backend, &bg_req);
-    }
-#endif
 
     SnapxRegion region = {0};
-    int ok = snapx_overlay_select_region(NULL, full_bg, &region);
-
+    int ok = snapx_overlay_select_region(NULL, full, &region);
     if (!ok) {
-        if (full_bg) snapx_image_free(full_bg);
+        snapx_image_free(full);
         snapx_restore_window_state(mw);
         return;
     }
 
-    gboolean freeze_overlay = (full_bg != NULL);
-    if (full_bg) snapx_image_free(full_bg);
+    SnapxMonitorInfo monitors[8] = {0};
+    int n_mon = snapx_get_monitors(mw->backend, monitors, 8);
+    SnapxImage *img = snapx_image_crop_desktop(full, region.x, region.y,
+                                                region.width, region.height,
+                                                monitors, n_mon);
+    snapx_image_free(full);
 
-    SnapxImage *img = NULL;
-
-    if (freeze_overlay) {
-        /* Fresh capture after overlay is gone — no snapx UI or overlay in result */
-        snapx_hide_for_capture(mw);
-        SnapxCaptureRequest full_req = {0};
-        full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
-        full_req.include_cursor = mw->config->show_cursor;
-        SnapxImage *fresh = snapx_capture(mw->backend, &full_req);
-        if (fresh) {
-            img = snapx_image_crop(fresh, region.x, region.y,
-                                    region.width, region.height);
-            snapx_image_free(fresh);
-        }
-    } else {
-        /* X11 transparent mode: direct region capture */
-        snapx_hide_for_capture(mw);
-        SnapxCaptureRequest req = {0};
-        req.mode           = SNAPX_CAPTURE_REGION;
-        req.region_x       = region.x;
-        req.region_y       = region.y;
-        req.region_w       = region.width;
-        req.region_h       = region.height;
-        req.include_cursor = mw->config->show_cursor;
-        img = snapx_capture(mw->backend, &req);
-    }
-
-    after_capture(mw, img, "Region captured.");
+    after_capture(mw, img,
+                  "Region captured — click Save to write a file.");
 }
 
 static void on_capture_monitor_btn(GtkButton *b, gpointer d)
@@ -825,9 +934,10 @@ static void on_capture_monitor_btn(GtkButton *b, gpointer d)
     SnapxImage *full_img = snapx_capture(mw->backend, &full_req);
     SnapxImage *img = NULL;
     if (full_img) {
-        img = snapx_image_crop(full_img,
-                                monitors[idx].x,  monitors[idx].y,
-                                monitors[idx].width, monitors[idx].height);
+        img = snapx_image_crop_desktop(full_img,
+                                        monitors[idx].x, monitors[idx].y,
+                                        monitors[idx].width, monitors[idx].height,
+                                        monitors, n);
         snapx_image_free(full_img);
     }
 
@@ -851,16 +961,59 @@ static void on_copy_clipboard(GtkButton *b, gpointer d)
     set_status(mw, "Copied to clipboard.");
 }
 
+/** Open a directory in the system file manager. */
+static void snapx_open_path_in_file_manager(MainWindow *mw, const char *path)
+{
+    if (!path || !path[0]) {
+        set_status(mw, "No folder path configured.");
+        return;
+    }
+
+    GFile *file = g_file_new_for_path(path);
+    char *uri = g_file_get_uri(file);
+    g_object_unref(file);
+    if (!uri) {
+        set_status(mw, "Could not open folder.");
+        return;
+    }
+
+    GError *err = NULL;
+    if (!g_app_info_launch_default_for_uri(uri, NULL, &err)) {
+        char msg[256];
+        snprintf(msg, sizeof(msg), "Could not open folder: %s",
+                 err ? err->message : "unknown error");
+        set_status(mw, msg);
+        if (err) g_error_free(err);
+    }
+    g_free(uri);
+}
+
+static void on_open_folder(GtkButton *b, gpointer d)
+{
+    (void)b;
+    MainWindow *mw = (MainWindow *)d;
+    const char *path = mw->config->save_dir;
+    if (mw->last_save_path[0]) {
+        char dir[512];
+        snprintf(dir, sizeof(dir), "%s", mw->last_save_path);
+        char *slash = strrchr(dir, '/');
+#ifdef SNAPX_PLATFORM_WINDOWS
+        char *bslash = strrchr(dir, '\\');
+        if (bslash > slash) slash = bslash;
+#endif
+        if (slash) {
+            *slash = '\0';
+            path = dir;
+        }
+    }
+    snapx_open_path_in_file_manager(mw, path);
+}
+
 static void on_save(GtkButton *b, gpointer d)
 {
     (void)b;
     MainWindow *mw = (MainWindow *)d;
     if (!mw->current_image) { set_status(mw, "Nothing to save."); return; }
-
-    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
-
-    char path[512];
-    snapx_config_build_path(mw->config, path, sizeof(path));
 
     SnapxOutputFormat fmt = SNAPX_FORMAT_PNG;
     if (mw->format_combo) {
@@ -870,6 +1023,11 @@ static void on_save(GtkButton *b, gpointer d)
         fmt = (SnapxOutputFormat)gtk_combo_box_get_active(GTK_COMBO_BOX(mw->format_combo));
 #endif
     }
+
+    char path[512];
+    snapx_config_build_path(mw->config, fmt, path, sizeof(path));
+
+    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
     int quality = (int)(mw->quality_scale
                         ? gtk_range_get_value(GTK_RANGE(mw->quality_scale))
                         : mw->config->jpeg_quality);
@@ -878,11 +1036,15 @@ static void on_save(GtkButton *b, gpointer d)
     snapx_image_free(flat);
 
     if (ret == 0) {
+        snprintf(mw->last_save_path, sizeof(mw->last_save_path), "%s", path);
         char msg[600];
         snprintf(msg, sizeof(msg), "Saved: %s", path);
         set_status(mw, msg);
     } else {
-        set_status(mw, "Save failed — check permissions or disk space.");
+        char msg[600];
+        snprintf(msg, sizeof(msg),
+                 "Save failed (%s): %s", path, strerror(errno));
+        set_status(mw, msg);
     }
 }
 
@@ -1235,14 +1397,18 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_widget_set_visible(mw->quality_label,
                             config->default_format != SNAPX_FORMAT_PNG);
 
-    /* Copy / Save */
+    /* Copy / Save / Open folder */
     GtkWidget *btn_copy = gtk_button_new_with_label("Copy");
     GtkWidget *btn_save = gtk_button_new_with_label("Save");
+    GtkWidget *btn_folder = gtk_button_new_with_label("Open folder");
     gtk_widget_add_css_class(btn_save, "suggested-action");
     gtk_widget_set_tooltip_text(btn_copy, "Copy to clipboard  (Ctrl+C)");
     gtk_widget_set_tooltip_text(btn_save, "Save to file  (Ctrl+S)");
-    g_signal_connect(btn_copy, "clicked", G_CALLBACK(on_copy_clipboard), mw);
-    g_signal_connect(btn_save, "clicked", G_CALLBACK(on_save),           mw);
+    gtk_widget_set_tooltip_text(btn_folder,
+        "Open screenshots folder in file manager (last save location if available)");
+    g_signal_connect(btn_copy,   "clicked", G_CALLBACK(on_copy_clipboard), mw);
+    g_signal_connect(btn_save,   "clicked", G_CALLBACK(on_save),           mw);
+    g_signal_connect(btn_folder, "clicked", G_CALLBACK(on_open_folder),    mw);
 
 #ifdef SNAPX_USE_GTK4
     gtk_action_bar_pack_start(GTK_ACTION_BAR(action_bar), fmt_label);
@@ -1250,6 +1416,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_action_bar_pack_start(GTK_ACTION_BAR(action_bar), mw->quality_label);
     gtk_action_bar_pack_start(GTK_ACTION_BAR(action_bar), mw->quality_scale);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_save);
+    gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_folder);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_copy);
 #else
     gtk_box_pack_start(GTK_BOX(action_bar), fmt_label,         FALSE, FALSE, 4);
@@ -1257,6 +1424,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_box_pack_start(GTK_BOX(action_bar), mw->quality_label, FALSE, FALSE, 4);
     gtk_box_pack_start(GTK_BOX(action_bar), mw->quality_scale, FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_save,          FALSE, FALSE, 4);
+    gtk_box_pack_end  (GTK_BOX(action_bar), btn_folder,        FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_copy,          FALSE, FALSE, 4);
 #endif
 
@@ -1282,6 +1450,8 @@ void snapx_window_main_create(GtkApplication      *app,
 #endif
 
     gtk_widget_set_visible(win, TRUE);
+    g_idle_add(portal_parent_on_mapped, mw);
+    g_signal_connect(win, "destroy", G_CALLBACK(on_win_destroy), mw);
     set_status(mw, "Ready — click Screen, Region or Window to capture.");
 }
 

@@ -315,7 +315,26 @@ static SnapxImage *portal_screenshot_fallback(WaylandState *st)
     GVariant *uri_v = g_variant_lookup_value(results, "uri", G_VARIANT_TYPE_STRING);
     if (uri_v) {
         uri = g_variant_get_string(uri_v, NULL);
+        fprintf(stderr,
+                "[wayland] Screenshot portal fallback — compositor wrote a file\n");
         SnapxImage *img = load_file_uri(uri);
+        if (uri && strncmp(uri, "file://", 7) == 0) {
+            GError *err = NULL;
+            char *path = g_filename_from_uri(uri, NULL, &err);
+            if (path) {
+                if (unlink(path) == 0)
+                    fprintf(stderr,
+                            "[wayland] Removed portal screenshot file: %s\n", path);
+                else
+                    fprintf(stderr,
+                            "[wayland] Could not remove portal file %s: %s\n",
+                            path, strerror(errno));
+                g_free(path);
+            } else if (err) {
+                fprintf(stderr, "[wayland] %s\n", err->message);
+                g_error_free(err);
+            }
+        }
         g_variant_unref(uri_v);
         g_variant_unref(results);
         return img;
@@ -684,17 +703,18 @@ static SnapxImage *wayland_capture(SnapxCaptureBackend *backend,
 
     SnapxImage *img = NULL;
 
-    /* ScreenCast portal requires a valid Wayland parent window handle so that
-     * GNOME can display its sharing picker as a modal dialog.  In headless/CLI
-     * mode there is no GTK window, so the picker silently fails.  Skip
-     * ScreenCast when no parent handle is available and go straight to the
-     * Screenshot portal which works without a parent. */
+    /* ScreenCast: use when we have a parent handle (picker modal) or a saved
+     * restore_token (silent re-capture).  Avoid Screenshot portal — it writes a
+     * full-desktop PNG to disk before snapx crops the region. */
 #ifdef SNAPX_HAVE_PIPEWIRE
-    if (st->parent_window[0] != '\0') {
+    if (st->parent_window[0] != '\0' || st->restore_token[0] != '\0') {
         fprintf(stderr, "[wayland] Attempting ScreenCast portal capture...\n");
         img = portal_screencast_capture(st);
         if (img) return img;
         fprintf(stderr, "[wayland] ScreenCast failed — falling back to Screenshot portal\n");
+    } else {
+        fprintf(stderr,
+                "[wayland] No parent window or restore_token — ScreenCast skipped\n");
     }
 #endif
 

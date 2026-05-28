@@ -528,11 +528,7 @@ int snapx_overlay_select_region(GtkWindow        *parent,
         if (vis) gtk_widget_set_visual(win, vis);
         gtk_widget_set_app_paintable(win, TRUE);
 #else
-        GtkCssProvider *css = gtk_css_provider_new();
-        gtk_css_provider_load_from_string(css, "window { background: transparent; }");
-        gtk_style_context_add_provider_for_display(gdk_display_get_default(),
-            GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 10);
-        g_object_unref(css);
+        gtk_widget_add_css_class(win, "snapx-region-live");
 #endif
     }
 

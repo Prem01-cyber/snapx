@@ -9,6 +9,12 @@
  *  - All sizing in `em` / logical pixels — scales with system font size.
  */
 
+/* ─── Region overlay (live / transparent mode, no freeze-frame) ─────────── */
+
+window.snapx-region-live {
+  background-color: transparent;
+}
+
 /* ─── Canvas workspace ───────────────────────────────────────────────────── */
 
 .snapx-canvas {

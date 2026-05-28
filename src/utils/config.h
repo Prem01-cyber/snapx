@@ -84,7 +84,8 @@ void snapx_config_save(const SnapxConfig *config);
  * @param buf     Output buffer.
  * @param bufsz   Buffer size in bytes.
  */
-void snapx_config_build_path(const SnapxConfig *config, char *buf, size_t bufsz);
+void snapx_config_build_path(const SnapxConfig *config, SnapxOutputFormat fmt,
+                             char *buf, size_t bufsz);
 
 /**
  * @brief Return the platform-specific config directory path.

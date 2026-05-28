@@ -24,20 +24,14 @@ typedef struct {
  * The overlay is opened fullscreen on the monitor under the pointer (Flameshot
  * style), not necessarily the primary display.
  *
- * Two modes depending on @p background:
+ * When @p background is non-NULL, a freeze-frame of the desktop is shown under
+ * the dim (recommended on Wayland — one capture, then crop the same buffer).
  *
- *  - **background != NULL (freeze-frame / Wayland mode)**:
- *    The full virtual-desktop screenshot is shown as the background.
- *    Only that monitor's slice of @p background is rendered.  The returned
- *    rectangle is in virtual-desktop coordinates; the caller should crop a
- *    **fresh** capture for the final image (not @p background).
- *
- *  - **background == NULL (transparent / X11 mode)**:
- *    The overlay is visually transparent over the live desktop.  The returned
- *    rectangle is still in virtual-desktop coordinates.
+ * When @p background is NULL, a semi-transparent dim is used over the live
+ * desktop (X11 compositing); on Wayland this may appear as a black overlay.
  *
  * @param parent      Unused (pass NULL); kept for API stability.
- * @param background  Full virtual-desktop screenshot for overlay UX, or NULL.
+ * @param background  Optional freeze-frame for overlay only, or NULL (preferred).
  * @param region      Output: selected rectangle in virtual-desktop coordinates.
  * @return 1 if a region was confirmed, 0 if cancelled.
  */

@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 
 #ifdef SNAPX_PLATFORM_LINUX
 #  include <unistd.h>
@@ -68,6 +69,57 @@ SnapxImage *snapx_image_crop(const SnapxImage *src,
         memcpy(dst_row, src_row, (size_t)(w * 4));
     }
     return dst;
+}
+
+static void desktop_bounds(const SnapxMonitorInfo *mons, int n,
+                            int *virt_x, int *virt_y,
+                            int *virt_w, int *virt_h)
+{
+    if (n <= 0) {
+        *virt_x = *virt_y = 0;
+        *virt_w = *virt_h = 0;
+        return;
+    }
+    int min_x = mons[0].x, min_y = mons[0].y;
+    int max_x = mons[0].x + mons[0].width;
+    int max_y = mons[0].y + mons[0].height;
+    for (int i = 1; i < n; i++) {
+        if (mons[i].x < min_x) min_x = mons[i].x;
+        if (mons[i].y < min_y) min_y = mons[i].y;
+        int rx = mons[i].x + mons[i].width;
+        int ry = mons[i].y + mons[i].height;
+        if (rx > max_x) max_x = rx;
+        if (ry > max_y) max_y = ry;
+    }
+    *virt_x = min_x;
+    *virt_y = min_y;
+    *virt_w = max_x - min_x;
+    *virt_h = max_y - min_y;
+}
+
+SnapxImage *snapx_image_crop_desktop(const SnapxImage *src,
+                                      int region_x, int region_y,
+                                      int region_w, int region_h,
+                                      const SnapxMonitorInfo *mons,
+                                      int n_monitors)
+{
+    if (!src || !src->data || region_w <= 0 || region_h <= 0)
+        return NULL;
+
+    int virt_x, virt_y, virt_w, virt_h;
+    desktop_bounds(mons, n_monitors, &virt_x, &virt_y, &virt_w, &virt_h);
+    if (virt_w <= 0 || virt_h <= 0) {
+        virt_x = virt_y = 0;
+        virt_w = src->width;
+        virt_h = src->height;
+    }
+
+    int px = (int)round((region_x - virt_x) * (double)src->width  / (double)virt_w);
+    int py = (int)round((region_y - virt_y) * (double)src->height / (double)virt_h);
+    int pw = (int)round((double)region_w * (double)src->width  / (double)virt_w);
+    int ph = (int)round((double)region_h * (double)src->height / (double)virt_h);
+
+    return snapx_image_crop(src, px, py, pw, ph);
 }
 
 /* ─── Backend init ───────────────────────────────────────────────────────── */

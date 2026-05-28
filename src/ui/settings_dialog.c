@@ -92,7 +92,7 @@ static void update_preview(PatternPreviewCtx *ctx)
     snprintf(ctx->config->filename_pattern,
              sizeof(ctx->config->filename_pattern), "%s", p);
     char tmp[512];
-    snapx_config_build_path(ctx->config, tmp, sizeof(tmp));
+    snapx_config_build_path(ctx->config, ctx->config->default_format, tmp, sizeof(tmp));
     char markup[640];
     snprintf(markup, sizeof(markup), "<small><i>%s</i></small>", tmp);
     gtk_label_set_markup(GTK_LABEL(ctx->preview_label), markup);

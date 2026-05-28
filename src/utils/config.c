@@ -230,7 +230,8 @@ void snapx_config_save(const SnapxConfig *config)
 
 /* ─── Path builder with token expansion ─────────────────────────────────── */
 
-void snapx_config_build_path(const SnapxConfig *config, char *buf, size_t bufsz)
+void snapx_config_build_path(const SnapxConfig *config, SnapxOutputFormat fmt,
+                             char *buf, size_t bufsz)
 {
     time_t now = time(NULL);
     struct tm *tm = localtime(&now);
@@ -273,10 +274,10 @@ void snapx_config_build_path(const SnapxConfig *config, char *buf, size_t bufsz)
     }
     *p = '\0';
 
-    /* Determine extension */
+    /* Determine extension from requested output format */
     const char *ext = ".png";
-    if      (config->default_format == SNAPX_FORMAT_JPEG) ext = ".jpg";
-    else if (config->default_format == SNAPX_FORMAT_WEBP) ext = ".webp";
+    if      (fmt == SNAPX_FORMAT_JPEG) ext = ".jpg";
+    else if (fmt == SNAPX_FORMAT_WEBP) ext = ".webp";
 
     /* Combine dir + filename + extension */
 #ifdef SNAPX_PLATFORM_WINDOWS

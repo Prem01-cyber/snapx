@@ -220,6 +220,20 @@ Undo (`Ctrl+Z`) and redo (`Ctrl+Y`) are fully supported.
 
 ---
 
+## Troubleshooting (Wayland)
+
+### Two screenshots after region capture
+
+snapx only writes a file when you click **Save**. If you see a **full-screen** image in `~/Pictures/Screenshots` as soon as you confirm a region, the desktop portal fell back to GNOME’s **Screenshot** API (which always saves to disk). The cropped file from **Save** is the intended snapx output.
+
+To fix this:
+
+1. Run `./build/snapx` from a terminal and capture a region. stderr should show `Attempting ScreenCast portal capture...`, not `Using Screenshot portal...`.
+2. On first capture, approve **screen sharing** in the system dialog so snapx can store a `restore_token` under `~/.config/snapx/`.
+3. Ensure PipeWire and `xdg-desktop-portal` (with the GNOME or KDE backend) are installed.
+
+---
+
 ## Project structure
 
 ```

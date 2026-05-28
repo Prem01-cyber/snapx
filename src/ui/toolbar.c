@@ -113,6 +113,11 @@ static void on_redo(GtkButton *b, gpointer d)
 
 /* ─── Canvas gesture / event handlers ───────────────────────────────────── */
 
+static void stroke_point(double wx, double wy, double *ix, double *iy)
+{
+    snapx_main_widget_to_image(wx, wy, ix, iy);
+}
+
 #ifdef SNAPX_USE_GTK4
 
 static void on_canvas_press(GtkGestureClick *g, int n, double x, double y,
@@ -120,10 +125,12 @@ static void on_canvas_press(GtkGestureClick *g, int n, double x, double y,
 {
     (void)g; (void)n; (void)d;
     if (!g_tb.canvas) return;
+    double ix, iy;
+    stroke_point(x, y, &ix, &iy);
     g_tb.in_stroke      = TRUE;
-    g_tb.stroke_start_x = x;
-    g_tb.stroke_start_y = y;
-    snapx_canvas_stroke_begin(g_tb.canvas, x, y);
+    g_tb.stroke_start_x = ix;
+    g_tb.stroke_start_y = iy;
+    snapx_canvas_stroke_begin(g_tb.canvas, ix, iy);
 }
 
 static void on_canvas_release(GtkGestureClick *g, int n, double x, double y,
@@ -131,9 +138,11 @@ static void on_canvas_release(GtkGestureClick *g, int n, double x, double y,
 {
     (void)g; (void)n; (void)d;
     if (!g_tb.canvas || !g_tb.in_stroke) return;
+    double ix, iy;
+    stroke_point(x, y, &ix, &iy);
     g_tb.in_stroke    = FALSE;
     g_tb.annot_dirty  = TRUE;
-    snapx_canvas_stroke_end(g_tb.canvas, x, y);
+    snapx_canvas_stroke_end(g_tb.canvas, ix, iy);
     snapx_main_schedule_redraw();
 }
 
@@ -142,7 +151,9 @@ static void on_canvas_motion(GtkEventControllerMotion *ctrl, double x, double y,
 {
     (void)ctrl; (void)d;
     if (!g_tb.canvas || !g_tb.in_stroke) return;
-    snapx_canvas_stroke_update(g_tb.canvas, x, y);
+    double ix, iy;
+    stroke_point(x, y, &ix, &iy);
+    snapx_canvas_stroke_update(g_tb.canvas, ix, iy);
     snapx_main_schedule_redraw();
 }
 
@@ -152,8 +163,10 @@ static gboolean on_canvas_press_gtk3(GtkWidget *w, GdkEventButton *ev, gpointer 
 {
     (void)w; (void)d;
     if (!g_tb.canvas || ev->button != 1) return FALSE;
+    double ix, iy;
+    stroke_point(ev->x, ev->y, &ix, &iy);
     g_tb.in_stroke = TRUE;
-    snapx_canvas_stroke_begin(g_tb.canvas, ev->x, ev->y);
+    snapx_canvas_stroke_begin(g_tb.canvas, ix, iy);
     return FALSE;
 }
 
@@ -161,9 +174,11 @@ static gboolean on_canvas_release_gtk3(GtkWidget *w, GdkEventButton *ev, gpointe
 {
     (void)w; (void)d;
     if (!g_tb.canvas || !g_tb.in_stroke || ev->button != 1) return FALSE;
+    double ix, iy;
+    stroke_point(ev->x, ev->y, &ix, &iy);
     g_tb.in_stroke   = FALSE;
     g_tb.annot_dirty = TRUE;
-    snapx_canvas_stroke_end(g_tb.canvas, ev->x, ev->y);
+    snapx_canvas_stroke_end(g_tb.canvas, ix, iy);
     snapx_main_schedule_redraw();
     return FALSE;
 }
@@ -172,7 +187,9 @@ static gboolean on_canvas_motion_gtk3(GtkWidget *w, GdkEventMotion *ev, gpointer
 {
     (void)w; (void)d;
     if (!g_tb.canvas || !g_tb.in_stroke) return FALSE;
-    snapx_canvas_stroke_update(g_tb.canvas, ev->x, ev->y);
+    double ix, iy;
+    stroke_point(ev->x, ev->y, &ix, &iy);
+    snapx_canvas_stroke_update(g_tb.canvas, ix, iy);
     snapx_main_schedule_redraw();
     return FALSE;
 }
