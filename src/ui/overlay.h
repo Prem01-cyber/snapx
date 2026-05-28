@@ -19,24 +19,25 @@ typedef struct {
 } SnapxRegion;
 
 /**
- * @brief Show a fullscreen region-selection overlay.
+ * @brief Show a fullscreen region-selection overlay on the cursor monitor.
+ *
+ * The overlay is opened fullscreen on the monitor under the pointer (Flameshot
+ * style), not necessarily the primary display.
  *
  * Two modes depending on @p background:
  *
  *  - **background != NULL (freeze-frame / Wayland mode)**:
  *    The full virtual-desktop screenshot is shown as the background.
- *    The overlay window covers one monitor; only that monitor's slice of
- *    @p background is rendered.  The selected rectangle is mapped back to
- *    virtual-desktop coordinates via the monitor offset, so the caller can
- *    use `snapx_image_crop()` directly on @p background.
+ *    Only that monitor's slice of @p background is rendered.  The returned
+ *    rectangle is in virtual-desktop coordinates; the caller should crop a
+ *    **fresh** capture for the final image (not @p background).
  *
  *  - **background == NULL (transparent / X11 mode)**:
- *    The overlay window is made visually transparent (requires a compositing
- *    window manager).  The live desktop shines through the dim.  The returned
+ *    The overlay is visually transparent over the live desktop.  The returned
  *    rectangle is still in virtual-desktop coordinates.
  *
- * @param parent      Transient-for window (may be NULL).
- * @param background  Full virtual-desktop screenshot, or NULL for live dim.
+ * @param parent      Unused (pass NULL); kept for API stability.
+ * @param background  Full virtual-desktop screenshot for overlay UX, or NULL.
  * @param region      Output: selected rectangle in virtual-desktop coordinates.
  * @return 1 if a region was confirmed, 0 if cancelled.
  */

@@ -422,6 +422,52 @@ static gboolean reg_kp(GtkWidget *w, GdkEventKey *e, gpointer d)
 
 #endif
 
+/* ── Helper: monitor under cursor (Flameshot-style target display) ──────── */
+
+static GdkMonitor *get_monitor_at_cursor(GdkDisplay *dpy)
+{
+    if (!dpy) return NULL;
+
+    GdkSeat *seat = gdk_display_get_default_seat(dpy);
+    if (seat) {
+        GdkDevice *pointer = gdk_seat_get_pointer(seat);
+        if (pointer) {
+#ifdef SNAPX_USE_GTK4
+            double wx = 0, wy = 0;
+            GdkSurface *surf = gdk_device_get_surface_at_position(
+                pointer, &wx, &wy);
+            if (surf) {
+                GdkMonitor *mon = gdk_display_get_monitor_at_surface(dpy, surf);
+                if (mon) return mon;
+            }
+#else
+            gint px = 0, py = 0;
+            gdk_device_get_position(pointer, &px, &py, NULL);
+            GdkMonitor *mon = gdk_display_get_monitor_at_point(dpy, px, py);
+            if (mon) return mon;
+#endif
+        }
+    }
+
+    {
+        GListModel *mons = gdk_display_get_monitors(dpy);
+        guint n = g_list_model_get_n_items(mons);
+        if (n > 0)
+            return GDK_MONITOR(g_list_model_get_item(mons, 0));
+    }
+    return NULL;
+}
+
+static void seed_monitor_geom(GdkMonitor *mon,
+                                int *ox, int *oy, int *ow, int *oh)
+{
+    *ox = 0; *oy = 0; *ow = 1920; *oh = 1080;
+    if (!mon) return;
+    GdkRectangle geom = {0};
+    gdk_monitor_get_geometry(mon, &geom);
+    *ox = geom.x; *oy = geom.y; *ow = geom.width; *oh = geom.height;
+}
+
 /* ── Helper: get monitor geometry of a GtkWindow ────────────────────────── */
 
 static void get_monitor_geom(GtkWidget *win,
@@ -467,8 +513,12 @@ int snapx_overlay_select_region(GtkWindow        *parent,
     GtkWidget *win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 #endif
     st.win = win;
+    (void)parent;
     gtk_window_set_decorated(GTK_WINDOW(win), FALSE);
-    if (parent) gtk_window_set_transient_for(GTK_WINDOW(win), parent);
+
+    GdkDisplay *dpy = gdk_display_get_default();
+    GdkMonitor *target_mon = get_monitor_at_cursor(dpy);
+    seed_monitor_geom(target_mon, &st.mon_ox, &st.mon_oy, &st.mon_w, &st.mon_h);
 
     /* X11 transparent path: request RGBA visual */
     if (!background) {
@@ -490,7 +540,10 @@ int snapx_overlay_select_region(GtkWindow        *parent,
     GtkWidget *da = gtk_drawing_area_new();
     st.da = da;
 
-    gtk_window_fullscreen(GTK_WINDOW(win));
+    if (target_mon)
+        gtk_window_fullscreen_on_monitor(GTK_WINDOW(win), target_mon);
+    else
+        gtk_window_fullscreen(GTK_WINDOW(win));
 
 #ifdef SNAPX_USE_GTK4
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(da),

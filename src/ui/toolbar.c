@@ -12,6 +12,7 @@
  */
 
 #include "toolbar.h"
+#include "window_main.h"
 #include "../annotation/canvas.h"
 #include "../annotation/annotation.h"
 
@@ -99,7 +100,7 @@ static void on_undo(GtkButton *b, gpointer d)
     (void)b; (void)d;
     if (g_tb.canvas)  snapx_canvas_undo(g_tb.canvas);
     g_tb.annot_dirty = TRUE;
-    if (g_tb.drawing_area) gtk_widget_queue_draw(g_tb.drawing_area);
+    snapx_main_schedule_redraw();
 }
 
 static void on_redo(GtkButton *b, gpointer d)
@@ -107,7 +108,7 @@ static void on_redo(GtkButton *b, gpointer d)
     (void)b; (void)d;
     if (g_tb.canvas)  snapx_canvas_redo(g_tb.canvas);
     g_tb.annot_dirty = TRUE;
-    if (g_tb.drawing_area) gtk_widget_queue_draw(g_tb.drawing_area);
+    snapx_main_schedule_redraw();
 }
 
 /* ─── Canvas gesture / event handlers ───────────────────────────────────── */
@@ -133,7 +134,7 @@ static void on_canvas_release(GtkGestureClick *g, int n, double x, double y,
     g_tb.in_stroke    = FALSE;
     g_tb.annot_dirty  = TRUE;
     snapx_canvas_stroke_end(g_tb.canvas, x, y);
-    if (g_tb.drawing_area) gtk_widget_queue_draw(g_tb.drawing_area);
+    snapx_main_schedule_redraw();
 }
 
 static void on_canvas_motion(GtkEventControllerMotion *ctrl, double x, double y,
@@ -142,7 +143,7 @@ static void on_canvas_motion(GtkEventControllerMotion *ctrl, double x, double y,
     (void)ctrl; (void)d;
     if (!g_tb.canvas || !g_tb.in_stroke) return;
     snapx_canvas_stroke_update(g_tb.canvas, x, y);
-    if (g_tb.drawing_area) gtk_widget_queue_draw(g_tb.drawing_area);
+    snapx_main_schedule_redraw();
 }
 
 #else /* GTK3 */
@@ -163,7 +164,7 @@ static gboolean on_canvas_release_gtk3(GtkWidget *w, GdkEventButton *ev, gpointe
     g_tb.in_stroke   = FALSE;
     g_tb.annot_dirty = TRUE;
     snapx_canvas_stroke_end(g_tb.canvas, ev->x, ev->y);
-    if (g_tb.drawing_area) gtk_widget_queue_draw(g_tb.drawing_area);
+    snapx_main_schedule_redraw();
     return FALSE;
 }
 
@@ -172,7 +173,7 @@ static gboolean on_canvas_motion_gtk3(GtkWidget *w, GdkEventMotion *ev, gpointer
     (void)w; (void)d;
     if (!g_tb.canvas || !g_tb.in_stroke) return FALSE;
     snapx_canvas_stroke_update(g_tb.canvas, ev->x, ev->y);
-    if (g_tb.drawing_area) gtk_widget_queue_draw(g_tb.drawing_area);
+    snapx_main_schedule_redraw();
     return FALSE;
 }
 

@@ -35,4 +35,7 @@ void snapx_window_main_create(GtkApplication      *app,
  */
 void snapx_window_main_set_image(SnapxImage *img);
 
+/** Request a single coalesced redraw of the preview/annotation canvas. */
+void snapx_main_schedule_redraw(void);
+
 #endif /* SNAPX_WINDOW_MAIN_H */

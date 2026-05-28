@@ -97,6 +97,15 @@ typedef struct {
     gboolean panning;
     double   pan_last_x, pan_last_y;
 
+    /* Saved before capture hide; restored in after_capture / cancel */
+    gboolean          saved_window_state;
+    int               saved_x, saved_y, saved_w, saved_h;
+    GdkToplevelState  saved_toplevel_state;
+
+    /* Coalesced drawing-area redraw (one per frame) */
+    gboolean          draw_pending;
+    guint             draw_tick_id;   /**< GTK4 tick callback id, or 0       */
+
     /* Capture-mode / action buttons */
     GtkWidget *btn_fullscreen;
     GtkWidget *btn_region;
@@ -201,6 +210,53 @@ static void compute_viewport(MainWindow *mw, int cw, int ch,
     *out_oy = ((double)ch - ih * scale) / 2.0 - mw->pan_y * scale;
 }
 
+/** Cached 24×24 checkerboard tile (built once, tiled in rebuild_scaled). */
+static cairo_surface_t *get_checker_tile(void)
+{
+    static cairo_surface_t *tile = NULL;
+    if (tile) return tile;
+
+    const int cs = 12;
+    tile = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, cs * 2, cs * 2);
+    if (cairo_surface_status(tile) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(tile);
+        tile = NULL;
+        return NULL;
+    }
+    cairo_t *tcr = cairo_create(tile);
+    for (int ty = 0; ty < 2; ty++) {
+        for (int tx = 0; tx < 2; tx++) {
+            int which = (tx + ty) & 1;
+            cairo_set_source_rgb(tcr,
+                which ? 0.13 : 0.10,
+                which ? 0.13 : 0.10,
+                which ? 0.14 : 0.11);
+            cairo_rectangle(tcr, tx * cs, ty * cs, cs, cs);
+            cairo_fill(tcr);
+        }
+    }
+    cairo_destroy(tcr);
+    cairo_surface_mark_dirty(tile);
+    return tile;
+}
+
+static void paint_checkerboard_bg(cairo_t *cr, int cw, int ch)
+{
+    cairo_set_source_rgb(cr, 0.098, 0.098, 0.110);
+    cairo_paint(cr);
+
+    cairo_surface_t *tile = get_checker_tile();
+    if (!tile) return;
+
+    cairo_pattern_t *pat = cairo_pattern_create_for_surface(tile);
+    cairo_pattern_set_extend(pat, CAIRO_EXTEND_REPEAT);
+    cairo_set_source(cr, pat);
+    cairo_paint(cr);
+    cairo_pattern_destroy(pat);
+    (void)cw;
+    (void)ch;
+}
+
 /**
  * Rebuild the scaled_surface (preview at current zoom, sized to the canvas).
  * This avoids repeating the Cairo scale + paint on every frame.
@@ -230,20 +286,7 @@ static void rebuild_scaled(MainWindow *mw)
     }
 
     cairo_t *cr = cairo_create(mw->scaled_surface);
-    /* Dark workspace background */
-    cairo_set_source_rgb(cr, 0.098, 0.098, 0.110);
-    cairo_paint(cr);
-    /* Subtle checkerboard pattern (shows transparency) */
-    int cs = 12;
-    for (int ty = 0; ty < ch; ty += cs) {
-        for (int tx = 0; tx < cw; tx += cs) {
-            int which = ((tx/cs) + (ty/cs)) & 1;
-            cairo_set_source_rgb(cr, which ? 0.13 : 0.10, which ? 0.13 : 0.10,
-                                     which ? 0.14 : 0.11);
-            cairo_rectangle(cr, tx, ty, cs, cs);
-            cairo_fill(cr);
-        }
-    }
+    paint_checkerboard_bg(cr, cw, ch);
 
     cairo_translate(cr, ox, oy);
     cairo_scale(cr, scale, scale);
@@ -387,13 +430,9 @@ static void redraw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
     if (!mw->canvas) return;
 
     if (snapx_toolbar_in_stroke()) {
-        /* Mid-stroke: use cached committed surface + render live pending stroke
-         * directly to cr each frame.  This gives zero-lag preview without
-         * rebuilding the full annotation cache on every motion event. */
-
-        /* Ensure committed cache is fresh (but may be empty for first stroke) */
+        /* Mid-stroke: blit committed cache + draw pending live (no full rebuild). */
         if (!mw->annot_surface_valid)
-            rebuild_annot(mw);   /* builds committed-only surface */
+            rebuild_annot(mw);
 
         if (mw->annot_surface) {
             cairo_set_source_surface(cr, mw->annot_surface, 0, 0);
@@ -493,12 +532,139 @@ static void set_fit(MainWindow *mw)
     if (mw->drawing_area) gtk_widget_queue_draw(mw->drawing_area);
 }
 
+/* ─── Coalesced redraw ────────────────────────────────────────────────────── */
+
+#ifndef SNAPX_USE_GTK4
+static gboolean draw_idle_redraw(gpointer data)
+{
+    MainWindow *mw = (MainWindow *)data;
+    mw->draw_pending = FALSE;
+    mw->draw_tick_id = 0;
+    if (mw->drawing_area)
+        gtk_widget_queue_draw(mw->drawing_area);
+    return G_SOURCE_REMOVE;
+}
+#endif
+
+#ifdef SNAPX_USE_GTK4
+static gboolean on_draw_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer data)
+{
+    (void)clock;
+    MainWindow *mw = (MainWindow *)data;
+    if (mw->draw_pending) {
+        mw->draw_pending = FALSE;
+        gtk_widget_queue_draw(widget);
+    }
+    return G_SOURCE_CONTINUE;
+}
+#endif
+
+void snapx_main_schedule_redraw(void)
+{
+    MainWindow *mw = &g_win;
+    if (!mw->drawing_area) return;
+    if (mw->draw_pending) return;
+    mw->draw_pending = TRUE;
+
+#ifdef SNAPX_USE_GTK4
+    GdkFrameClock *fc = gtk_widget_get_frame_clock(mw->drawing_area);
+    if (fc)
+        gdk_frame_clock_request_phase(fc, GDK_FRAME_CLOCK_PHASE_PAINT);
+#else
+    if (!mw->draw_tick_id)
+        mw->draw_tick_id = g_idle_add(draw_idle_redraw, mw);
+#endif
+}
+
+/* ─── Window geometry save/restore ───────────────────────────────────────── */
+
+static void snapx_save_window_state(MainWindow *mw)
+{
+    GtkWindow *win = GTK_WINDOW(mw->win);
+    GdkSurface *surf = gtk_native_get_surface(GTK_NATIVE(mw->win));
+
+#ifdef SNAPX_USE_GTK4
+    if (gtk_widget_get_mapped(GTK_WIDGET(mw->win))) {
+        mw->saved_w = gtk_widget_get_width(GTK_WIDGET(mw->win));
+        mw->saved_h = gtk_widget_get_height(GTK_WIDGET(mw->win));
+    } else {
+        gtk_window_get_default_size(win, &mw->saved_w, &mw->saved_h);
+    }
+    mw->saved_x = 0;
+    mw->saved_y = 0;
+    if (surf && GDK_IS_TOPLEVEL(surf))
+        mw->saved_toplevel_state = gdk_toplevel_get_state(GDK_TOPLEVEL(surf));
+    else
+        mw->saved_toplevel_state = 0;
+#else
+    if (!surf || !GDK_IS_TOPLEVEL(surf)) {
+        mw->saved_window_state = FALSE;
+        return;
+    }
+    GdkToplevel *top = GDK_TOPLEVEL(surf);
+    GdkRectangle bounds = {0};
+    gdk_toplevel_get_bounds(top, &bounds);
+    mw->saved_x = bounds.x;
+    mw->saved_y = bounds.y;
+    mw->saved_w = bounds.width  > 0 ? bounds.width  : 900;
+    mw->saved_h = bounds.height > 0 ? bounds.height : 640;
+    mw->saved_toplevel_state = gdk_toplevel_get_state(top);
+#endif
+
+    if (mw->saved_w <= 0) mw->saved_w = 900;
+    if (mw->saved_h <= 0) mw->saved_h = 640;
+    mw->saved_window_state = TRUE;
+}
+
+static void snapx_restore_window_state(MainWindow *mw)
+{
+    update_portal_parent(mw);
+    gtk_widget_set_visible(GTK_WIDGET(mw->win), TRUE);
+
+    if (!mw->saved_window_state) {
+        gtk_window_present(GTK_WINDOW(mw->win));
+        return;
+    }
+
+    GtkWindow *win = GTK_WINDOW(mw->win);
+
+    if (mw->saved_toplevel_state & GDK_TOPLEVEL_STATE_FULLSCREEN) {
+        gtk_window_fullscreen(win);
+    } else if (mw->saved_toplevel_state & GDK_TOPLEVEL_STATE_MAXIMIZED) {
+        gtk_window_unfullscreen(win);
+        gtk_window_maximize(win);
+    } else {
+        gtk_window_unfullscreen(win);
+        gtk_window_unmaximize(win);
+#ifdef SNAPX_USE_GTK4
+        gtk_window_set_default_size(win, mw->saved_w, mw->saved_h);
+#else
+        gtk_window_resize(win, mw->saved_w, mw->saved_h);
+#endif
+    }
+
+    gtk_window_present(win);
+    mw->saved_window_state = FALSE;
+}
+
 /* ─── Capture ─────────────────────────────────────────────────────────────── */
+
+/** Hide main window and settle before portal/X11 capture (no snapx UI in shot). */
+static void snapx_hide_for_capture(MainWindow *mw)
+{
+    if (gtk_widget_get_visible(GTK_WIDGET(mw->win)))
+        snapx_save_window_state(mw);
+    gtk_widget_set_visible(GTK_WIDGET(mw->win), FALSE);
+    if (mw->backend && mw->backend->type == SNAPX_BACKEND_WAYLAND)
+        snapx_capture_wayland_set_parent_window(mw->backend, "");
+    for (int i = 0; i < 15; i++)
+        g_main_context_iteration(NULL, FALSE);
+    g_usleep(200 * 1000);
+}
 
 static void after_capture(MainWindow *mw, SnapxImage *img, const char *ok_msg)
 {
-    gtk_widget_set_visible(GTK_WIDGET(mw->win), TRUE);
-    gtk_window_present(GTK_WINDOW(mw->win));
+    snapx_restore_window_state(mw);
 
     if (!img) { set_status(mw, "Capture failed — check backend with snapx --info."); return; }
 
@@ -528,9 +694,7 @@ static void after_capture(MainWindow *mw, SnapxImage *img, const char *ok_msg)
 
 static void do_capture(MainWindow *mw, SnapxCaptureMode mode, int delay)
 {
-    update_portal_parent(mw);
-    gtk_widget_set_visible(GTK_WIDGET(mw->win), FALSE);
-    while (g_main_context_iteration(NULL, FALSE)) {}
+    snapx_hide_for_capture(mw);
 
     SnapxCaptureRequest req = {0};
     req.mode           = mode;
@@ -554,41 +718,25 @@ static void on_capture_region(GtkButton *b, gpointer d)
     (void)b;
     MainWindow *mw = (MainWindow *)d;
 
-    /* ── Step 1: hide main window ────────────────────────────────────────── */
-    gtk_widget_set_visible(GTK_WIDGET(mw->win), FALSE);
-    while (g_main_context_pending(NULL))
-        g_main_context_iteration(NULL, FALSE);
-    /* Small compositor settle so main window is fully off-screen */
-    g_usleep(80 * 1000);
+    /* Hide snapx before any capture so it is not in the freeze-frame or final shot */
+    snapx_hide_for_capture(mw);
 
-    /* ── Step 2: decide overlay mode ─────────────────────────────────────── */
     /*
-     * Wayland (and any backend that can't do live transparent windows):
-     *   Take a full-desktop freeze-frame FIRST, pass it to the overlay as a
-     *   background image.  This is exactly what Flameshot does on Wayland.
-     *   No grey screen, no guesswork about compositor transparency support.
-     *
-     * X11:
-     *   Pass NULL → overlay goes fully transparent via RGBA visual + CLEAR
-     *   operator.  The live desktop shows through the dim natively.
+     * Freeze-frame (overlay UX only): full virtual desktop for Wayland/Win/macOS.
+     * X11 uses NULL → live transparent overlay.
+     * Final image comes from a second capture after the overlay closes.
      */
     SnapxImage *full_bg = NULL;
 
 #if defined(SNAPX_PLATFORM_LINUX)
     if (mw->backend->type != SNAPX_BACKEND_X11) {
-        /* Wayland / portal: pre-capture full virtual desktop */
-        set_status(mw, "Preparing region selector…");
-        while (g_main_context_pending(NULL))
-            g_main_context_iteration(NULL, FALSE);
-
         SnapxCaptureRequest bg_req = {0};
         bg_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
-        bg_req.include_cursor = FALSE;  /* don't want cursor in background */
+        bg_req.include_cursor = FALSE;
         full_bg = snapx_capture(mw->backend, &bg_req);
     }
 #elif defined(SNAPX_PLATFORM_WINDOWS) || defined(SNAPX_PLATFORM_MACOS)
     {
-        /* On Windows/macOS always use freeze-frame too */
         SnapxCaptureRequest bg_req = {0};
         bg_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
         bg_req.include_cursor = FALSE;
@@ -596,32 +744,35 @@ static void on_capture_region(GtkButton *b, gpointer d)
     }
 #endif
 
-    /* ── Step 3: show overlay ─────────────────────────────────────────────── */
     SnapxRegion region = {0};
-    int ok = snapx_overlay_select_region(GTK_WINDOW(mw->win), full_bg, &region);
+    int ok = snapx_overlay_select_region(NULL, full_bg, &region);
 
     if (!ok) {
         if (full_bg) snapx_image_free(full_bg);
-        gtk_widget_set_visible(GTK_WIDGET(mw->win), TRUE);
-        gtk_window_present(GTK_WINDOW(mw->win));
+        snapx_restore_window_state(mw);
         return;
     }
 
-    /* ── Step 4: produce the cropped result ──────────────────────────────── */
+    gboolean freeze_overlay = (full_bg != NULL);
+    if (full_bg) snapx_image_free(full_bg);
+
     SnapxImage *img = NULL;
 
-    if (full_bg) {
-        /* We already have the full desktop image — just crop it */
-        img = snapx_image_crop(full_bg, region.x, region.y,
-                                region.width, region.height);
-        snapx_image_free(full_bg);
-        full_bg = NULL;
+    if (freeze_overlay) {
+        /* Fresh capture after overlay is gone — no snapx UI or overlay in result */
+        snapx_hide_for_capture(mw);
+        SnapxCaptureRequest full_req = {0};
+        full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
+        full_req.include_cursor = mw->config->show_cursor;
+        SnapxImage *fresh = snapx_capture(mw->backend, &full_req);
+        if (fresh) {
+            img = snapx_image_crop(fresh, region.x, region.y,
+                                    region.width, region.height);
+            snapx_image_free(fresh);
+        }
     } else {
-        /* X11 transparent mode: brief settle then direct region capture */
-        while (g_main_context_pending(NULL))
-            g_main_context_iteration(NULL, FALSE);
-        g_usleep(80 * 1000);
-
+        /* X11 transparent mode: direct region capture */
+        snapx_hide_for_capture(mw);
         SnapxCaptureRequest req = {0};
         req.mode           = SNAPX_CAPTURE_REGION;
         req.region_x       = region.x;
@@ -648,16 +799,13 @@ static void on_capture_monitor_btn(GtkButton *b, gpointer d)
         return;
     }
 
-    /* Hide main window */
-    gtk_widget_set_visible(GTK_WIDGET(mw->win), FALSE);
-    while (g_main_context_iteration(NULL, FALSE)) {}
+    snapx_hide_for_capture(mw);
 
     /* Show monitor picker overlay */
     int idx = snapx_overlay_select_monitor(GTK_WINDOW(mw->win), monitors, n);
 
     if (idx < 0) {
-        gtk_widget_set_visible(GTK_WIDGET(mw->win), TRUE);
-        gtk_window_present(GTK_WINDOW(mw->win));
+        snapx_restore_window_state(mw);
         return;
     }
 
@@ -1012,6 +1160,8 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_widget_set_size_request(mw->drawing_area, 400, 300);
     gtk_widget_set_focusable(mw->drawing_area, TRUE);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), mw->drawing_area);
+    mw->draw_tick_id = gtk_widget_add_tick_callback(
+        mw->drawing_area, on_draw_tick, mw, NULL);
 #else
     mw->drawing_area = gtk_drawing_area_new();
     gtk_widget_add_css_class(mw->drawing_area, "snapx-canvas");

@@ -267,6 +267,15 @@ void snapx_canvas_render_committed(const SnapxAnnotationCanvas *canvas, cairo_t 
 void snapx_canvas_render_pending(const SnapxAnnotationCanvas *canvas, cairo_t *cr)
 {
     if (!canvas || !cr || !canvas->pending) return;
+
+    SnapxAnnotationTool tool = canvas->pending->tool;
+    if (tool == SNAPX_TOOL_RECT || tool == SNAPX_TOOL_ARROW ||
+        tool == SNAPX_TOOL_HIGHLIGHT) {
+        snapx_draw_annotation(cr, canvas->pending);
+        return;
+    }
+
+    /* Pen / text preview: soft alpha via off-screen group */
     cairo_save(cr);
     cairo_push_group(cr);
     snapx_draw_annotation(cr, canvas->pending);
