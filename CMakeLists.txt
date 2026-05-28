@@ -230,6 +230,9 @@ else()
     add_executable(snapx ${SOURCES})
 endif()
 
+target_compile_definitions(snapx PRIVATE
+    SNAPX_VERSION_STR="${PROJECT_VERSION}")
+
 # ─── Include directories ──────────────────────────────────────────────────────
 target_include_directories(snapx PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -322,9 +325,12 @@ install(TARGETS snapx RUNTIME DESTINATION bin)
 if(PLATFORM_LINUX)
     install(FILES packaging/linux/snapx.desktop
             DESTINATION share/applications)
-    install(DIRECTORY resources/icons/
+    install(FILES resources/icons/snapx.svg
+            DESTINATION share/icons/hicolor/scalable/apps
+            RENAME snapx.svg)
+    install(DIRECTORY resources/icons/hicolor/
             DESTINATION share/icons/hicolor
-            FILES_MATCHING PATTERN "*.png" PATTERN "*.svg")
+            FILES_MATCHING PATTERN "*.png")
 endif()
 
 if(PLATFORM_MACOS)

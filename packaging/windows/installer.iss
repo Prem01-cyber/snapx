@@ -4,9 +4,9 @@
 #define MyAppName      "snapx"
 #define MyAppVersion   "1.0.0"
 #define MyAppPublisher "snapx Team"
-#define MyAppURL       "https://github.com/snapx/snapx"
+#define MyAppURL       "https://github.com/Prem01-cyber/snapx"
 #define MyAppExeName   "snapx.exe"
-#define MyBuildDir     "..\..\build-win64\Release"
+#define MyBuildDir     "..\..\build"
 
 [Setup]
 AppId={{8F9A1234-ABCD-4321-EFGH-000000000001}
@@ -45,7 +45,7 @@ Source: "{#MyBuildDir}\{#MyAppExeName}";   DestDir: "{app}"; Flags: ignoreversio
 Source: "{#MyBuildDir}\*.dll";             DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "{#MyBuildDir}\lib\*";             DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "{#MyBuildDir}\share\*";           DestDir: "{app}\share"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "..\..\resources\icons\256x256\apps\snapx.png"; DestDir: "{app}"; DestName: "snapx.png"; Flags: ignoreversion
+Source: "..\..\resources\icons\hicolor\256x256\apps\snapx.png"; DestDir: "{app}"; DestName: "snapx.png"; Flags: ignoreversion
 Source: "..\..\LICENSE";                   DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\README.md";                 DestDir: "{app}"; Flags: ignoreversion
 

@@ -47,6 +47,9 @@ snapx_test*.png
 *.msi
 dist/
 rpmbuild/
+packaging/linux/output/
+packaging/windows/output/
+packaging/macos/output/
 
 # Logs / temp
 *.log

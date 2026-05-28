@@ -3,7 +3,7 @@ Version:        1.0.0
 Release:        1%{?dist}
 Summary:        Lightweight cross-platform screenshot utility
 License:        MIT
-URL:            https://github.com/snapx/snapx
+URL:            https://github.com/Prem01-cyber/snapx
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  cmake >= 3.16

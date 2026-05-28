@@ -4,7 +4,7 @@ pkgver=1.0.0
 pkgrel=1
 pkgdesc="Lightweight cross-platform screenshot utility"
 arch=('x86_64' 'aarch64')
-url="https://github.com/snapx/snapx"
+url="https://github.com/Prem01-cyber/snapx"
 license=('MIT')
 depends=(
     'gtk4'
@@ -21,7 +21,7 @@ depends=(
     'dbus'
 )
 makedepends=('cmake' 'git')
-source=("$pkgname-$pkgver.tar.gz::https://github.com/snapx/snapx/archive/v$pkgver.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::https://github.com/Prem01-cyber/snapx/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {
@@ -39,7 +39,7 @@ package() {
         "$pkgdir/usr/share/icons/hicolor/scalable/apps/snapx.svg"
     for size in 16 32 48 64 128 256; do
         install -Dm644 \
-            "$pkgname-$pkgver/resources/icons/${size}x${size}/apps/snapx.png" \
+            "$pkgname-$pkgver/resources/icons/hicolor/${size}x${size}/apps/snapx.png" \
             "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/snapx.png"
     done
     install -Dm644 "$pkgname-$pkgver/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

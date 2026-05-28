@@ -38,8 +38,9 @@
 #include "output/clipboard.h"
 #include "output/save.h"
 
-/* ─── Version ─────────────────────────────────────────────────────────────── */
-#define SNAPX_VERSION_STR "1.0.0"
+#ifndef SNAPX_VERSION_STR
+#define SNAPX_VERSION_STR "unknown"
+#endif
 
 /* ─── CLI options ─────────────────────────────────────────────────────────── */
 typedef struct {
