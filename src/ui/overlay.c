@@ -77,22 +77,24 @@ static void draw_handle(cairo_t *cr, double x, double y, double hs)
 
 typedef struct {
     GtkWidget        *win;
+    GtkWidget        *da;         /**< drawing area — target for queue_draw    */
     GMainLoop        *loop;
-    SnapxRegion       result;     /**< in virtual-desktop coords after confirm */
+    SnapxRegion       result;
     gboolean          confirmed;
 
-    gboolean          dragging;
-    double            start_x, start_y;   /**< widget coords */
+    /* Selection state: idle → pressing (mouse held) → released (confirm) */
+    gboolean          pressing;   /**< button is currently held down           */
+    double            start_x, start_y;
     double            cur_x,   cur_y;
     double            mouse_x, mouse_y;
 
-    /* Monitor offset of this window (virtual-desktop coords of top-left) */
+    /* Monitor geometry (refreshed every draw frame) */
     int               mon_ox, mon_oy;
-    int               mon_w,  mon_h;      /**< logical size of current monitor */
+    int               mon_w,  mon_h;
 
-    /* Optional freeze-frame background (NULL → transparent live mode) */
+    /* Freeze-frame background (NULL → transparent/live mode on X11) */
     const SnapxImage *background;
-    cairo_surface_t  *bg_surf;            /**< ARGB32 surface built from background */
+    cairo_surface_t  *bg_surf;
 } RegionState;
 
 /* ── Forward declarations ────────────────────────────────────────────────── */
@@ -100,51 +102,121 @@ typedef struct {
 static void get_monitor_geom(GtkWidget *win,
                                int *ox, int *oy, int *ow, int *oh);
 
-/* ── Build cairo surface from SnapxImage ─────────────────────────────────── */
+/* ── RGBA SnapxImage → Cairo ARGB32 surface ──────────────────────────────── */
 
-/**
- * Convert an RGBA SnapxImage into an ARGB32 cairo image surface.
- * The caller owns the returned surface.
- */
 static cairo_surface_t *image_to_cairo(const SnapxImage *img)
 {
     if (!img || !img->data) return NULL;
-    int w = img->width, h = img->height;
-    cairo_surface_t *surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    int iw = img->width, ih = img->height;
+    cairo_surface_t *surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, iw, ih);
     if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS) {
-        cairo_surface_destroy(surf);
-        return NULL;
+        cairo_surface_destroy(surf); return NULL;
     }
     cairo_surface_flush(surf);
-    unsigned char *dst = cairo_image_surface_get_data(surf);
-    int dst_stride     = cairo_image_surface_get_stride(surf);
-    const unsigned char *src = img->data;
-    int src_stride = img->stride > 0 ? img->stride : w * 4;
-    for (int y = 0; y < h; y++) {
-        const unsigned char *srow = src + y * src_stride;
-        unsigned char       *drow = dst + y * dst_stride;
-        for (int x = 0; x < w; x++) {
-            /* RGBA → ARGB32 (pre-multiplied alpha not needed, alpha=255) */
-            unsigned char r = srow[x*4+0];
-            unsigned char g = srow[x*4+1];
-            unsigned char b = srow[x*4+2];
-            unsigned char a = srow[x*4+3];
-            drow[x*4+0] = b;
-            drow[x*4+1] = g;
-            drow[x*4+2] = r;
-            drow[x*4+3] = a;
+    uint8_t       *dst      = cairo_image_surface_get_data(surf);
+    int            dst_str  = cairo_image_surface_get_stride(surf);
+    const uint8_t *src      = img->data;
+    int            src_str  = img->stride > 0 ? img->stride : iw * 4;
+    for (int y = 0; y < ih; y++) {
+        const uint8_t *sr = src + y * src_str;
+        uint32_t      *dr = (uint32_t *)(dst + y * dst_str);
+        for (int x = 0; x < iw; x++) {
+            uint8_t r = sr[x*4+0], g = sr[x*4+1], b = sr[x*4+2], a = sr[x*4+3];
+            /* Cairo ARGB32 (pre-mul, but a=255 for screenshots so no-op) */
+            dr[x] = ((uint32_t)a << 24) | ((uint32_t)r << 16) |
+                    ((uint32_t)g <<  8) |  (uint32_t)b;
         }
     }
     cairo_surface_mark_dirty(surf);
     return surf;
 }
 
-/* ── Draw ───────────────────────────────────────────────────────────────── */
+/* ── Paint background slice ──────────────────────────────────────────────── */
+
+/**
+ * Render the monitor's slice of bg_surf into the drawing area.
+ * The source is a full virtual-desktop screenshot; we translate it so that
+ * the monitor at (mon_ox, mon_oy) fills the widget from (0,0).
+ * Scale handles HiDPI where the widget is larger than the logical monitor size.
+ */
+static void paint_background(cairo_t *cr, int w, int h,
+                               cairo_surface_t *bg_surf,
+                               int mon_ox, int mon_oy,
+                               int mon_w,  int mon_h)
+{
+    if (!bg_surf) {
+        /* Transparent/live X11 mode: clear surface so compositor shows through */
+        cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+        cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.0);
+        cairo_paint(cr);
+        cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+        return;
+    }
+
+    /*
+     * Scale: widget_pixels / monitor_logical_pixels
+     * For non-HiDPI this is 1.0.  For HiDPI the widget may be 2× the logical
+     * monitor size so we scale the bg up to fill.
+     */
+    double sx = (mon_w > 0) ? (double)w / mon_w : 1.0;
+    double sy = (mon_h > 0) ? (double)h / mon_h : 1.0;
+
+    cairo_save(cr);
+    cairo_scale(cr, sx, sy);
+
+    /*
+     * cairo_set_source_surface(surf, x0, y0):
+     *   At user-space point (u, v), source pixel = surf[(u - x0), (v - y0)].
+     * We want user (0, 0) → surf pixel (mon_ox, mon_oy), so x0 = -mon_ox.
+     */
+    cairo_set_source_surface(cr, bg_surf,
+                             -(double)mon_ox,
+                             -(double)mon_oy);
+    cairo_paint(cr);
+    cairo_restore(cr);
+}
+
+/* ── Paint dim (four explicit rects around the selection) ────────────────── */
+
+static void paint_dim(cairo_t *cr, int w, int h,
+                       double rx, double ry, double rw, double rh)
+{
+    /*
+     * Four-rectangle approach — no fill-rule quirks.
+     * Top / Bottom / Left / Right strips surrounding the selection hole.
+     *
+     *  ┌──────────────────────────────┐
+     *  │          TOP (full width)    │
+     *  ├───────┬──────────┬───────────┤
+     *  │ LEFT  │  (clear) │   RIGHT   │
+     *  ├───────┴──────────┴───────────┤
+     *  │         BOTTOM (full width)  │
+     *  └──────────────────────────────┘
+     */
+    cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.50);
+
+    /* Top strip */
+    if (ry > 0)
+        cairo_rectangle(cr, 0, 0, w, ry);
+    /* Bottom strip */
+    if (ry + rh < h)
+        cairo_rectangle(cr, 0, ry + rh, w, h - ry - rh);
+    /* Left strip (only for the selection's row range) */
+    if (rx > 0)
+        cairo_rectangle(cr, 0, ry, rx, rh);
+    /* Right strip */
+    if (rx + rw < w)
+        cairo_rectangle(cr, rx + rw, ry, w - rx - rw, rh);
+
+    cairo_fill(cr);
+}
+
+/* ── Draw callback ───────────────────────────────────────────────────────── */
 
 #ifdef SNAPX_USE_GTK4
-static void region_draw(GtkDrawingArea *da, cairo_t *cr,
+static void region_draw(GtkDrawingArea *area, cairo_t *cr,
                          int w, int h, gpointer data)
-{ (void)da;
+{ (void)area;
 #else
 static gboolean region_draw(GtkWidget *widget, cairo_t *cr, gpointer data)
 { int w, h; GtkAllocation a;
@@ -153,124 +225,78 @@ static gboolean region_draw(GtkWidget *widget, cairo_t *cr, gpointer data)
 
     RegionState *st = (RegionState *)data;
 
-    /*
-     * Refresh monitor geometry on every frame.  On Wayland the compositor
-     * assigns the window to a monitor asynchronously; the first 1-2 frames
-     * may not know the correct monitor position yet.  This is a cheap GDK
-     * query and calling it per-frame ensures we always have current values.
-     */
+    /* Refresh monitor geometry every frame — on Wayland the compositor assigns
+     * the window to an output asynchronously so the first frame may not know. */
     get_monitor_geom(st->win, &st->mon_ox, &st->mon_oy, &st->mon_w, &st->mon_h);
 
-    /* ── Step 1: Background ──────────────────────────────────────────────── */
-    if (st->bg_surf) {
-        /*
-         * Freeze-frame mode: paint the monitor's slice of the full-desktop
-         * screenshot.  The bg_surf covers the entire virtual desktop; we
-         * translate the source so that (mon_ox, mon_oy) lands at widget (0,0).
-         *
-         * Scale only when the monitor's logical size differs from the widget
-         * size (HiDPI): widget_w / mon_w  gives the render scale factor.
-         */
-        double sx = (st->mon_w > 0) ? (double)w / st->mon_w : 1.0;
-        double sy = (st->mon_h > 0) ? (double)h / st->mon_h : 1.0;
+    /* 1. Draw background (frozen screenshot or transparent) */
+    paint_background(cr, w, h, st->bg_surf,
+                     st->mon_ox, st->mon_oy, st->mon_w, st->mon_h);
 
-        /* Paint the scaled & offset source to fill the whole drawing area */
-        cairo_save(cr);
-        cairo_scale(cr, sx, sy);
-        /*
-         * At user-space origin (0,0) we want bg pixel (mon_ox, mon_oy).
-         * cairo_set_source_surface offset is: dest - src, i.e. 0 - mon_ox.
-         */
-        /*
-         * Source offset is in user-space (post-scale).  User (0,0) must map
-         * to bg pixel (mon_ox, mon_oy).  cairo_set_source_surface(surf, x0, y0)
-         * means: at user (u,v) → surf pixel (u-x0, v-y0).
-         * So x0 = -mon_ox (user units), which at scale sx is mon_ox logical px.
-         */
-        cairo_set_source_surface(cr, st->bg_surf,
-                                 -(double)st->mon_ox,
-                                 -(double)st->mon_oy);
-        cairo_paint(cr);
-        cairo_restore(cr);
-    } else {
-        /* Transparent/live mode (X11 compositing): fully clear first */
-        cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-        cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.0);
-        cairo_paint(cr);
-        cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-    }
-
-    /* ── Step 2: Dim ─────────────────────────────────────────────────────── */
+    /* 2. Dim + selection feedback */
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 
-    if (st->dragging) {
+    if (st->pressing) {
         double rx, ry, rw, rh;
         normalise(st->start_x, st->start_y, st->cur_x, st->cur_y,
                   &rx, &ry, &rw, &rh);
 
-        /*
-         * Paint dim everywhere EXCEPT the selection rectangle.
-         * EVEN_ODD fill rule treats nested rectangles as holes:
-         *   outer rect (0,0,w,h) = filled
-         *   inner rect (rx,ry,rw,rh) = hole (not filled)
-         * → only the area outside the selection is dimmed.
-         */
-        cairo_save(cr);
-        cairo_set_fill_rule(cr, CAIRO_FILL_RULE_EVEN_ODD);
-        cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.50);
-        cairo_rectangle(cr, 0, 0, w, h);
-        cairo_rectangle(cr, rx, ry, rw, rh);
-        cairo_fill(cr);
-        cairo_restore(cr);
+        /* Dim the four strips around the selection (leave interior bright) */
+        paint_dim(cr, w, h, rx, ry, rw, rh);
 
-        /* Bright blue selection border */
-        cairo_set_source_rgba(cr, 0.25, 0.65, 1.0, 0.95);
+        /* Blue selection border */
+        cairo_set_source_rgba(cr, 0.20, 0.60, 1.0, 0.95);
         cairo_set_line_width(cr, 2.0);
         cairo_rectangle(cr, rx, ry, rw, rh);
         cairo_stroke(cr);
 
-        /* Corner + edge handles */
+        /* Corner + mid-edge handles */
         double hs = 5.0;
-        draw_handle(cr, rx,        ry,        hs);
-        draw_handle(cr, rx+rw,     ry,        hs);
-        draw_handle(cr, rx,        ry+rh,     hs);
-        draw_handle(cr, rx+rw,     ry+rh,     hs);
-        draw_handle(cr, rx+rw/2,   ry,        hs);
-        draw_handle(cr, rx+rw/2,   ry+rh,     hs);
-        draw_handle(cr, rx,        ry+rh/2,   hs);
-        draw_handle(cr, rx+rw,     ry+rh/2,   hs);
+        draw_handle(cr, rx,       ry,       hs);
+        draw_handle(cr, rx+rw,    ry,       hs);
+        draw_handle(cr, rx,       ry+rh,    hs);
+        draw_handle(cr, rx+rw,    ry+rh,    hs);
+        draw_handle(cr, rx+rw/2,  ry,       hs);
+        draw_handle(cr, rx+rw/2,  ry+rh,    hs);
+        draw_handle(cr, rx,       ry+rh/2,  hs);
+        draw_handle(cr, rx+rw,    ry+rh/2,  hs);
 
-        /* Dimension badge (above or below selection) */
+        /* Dimension badge */
         char dim[48];
         snprintf(dim, sizeof(dim), "%d × %d", (int)rw, (int)rh);
-        double badge_y = (ry > 50) ? ry - 16 : ry + rh + 38;
-        draw_badge(cr, rx + rw/2.0, badge_y, dim, 13.0);
+        double by = (ry > 50) ? ry - 16 : ry + rh + 38;
+        draw_badge(cr, rx + rw/2.0, by, dim, 13.0);
+
+        /* Small tip: release to confirm */
+        draw_badge(cr, w/2.0, h - 30,
+                   "Release to capture   |   Esc = cancel", 13.0);
     } else {
-        /* No selection yet — dim everything */
+        /* Pre-selection: full dim + crosshair + coordinate badge */
         cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.50);
         cairo_paint(cr);
 
-        /* Crosshair */
         double cx = st->mouse_x, cy = st->mouse_y;
-        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.40);
+
+        /* Crosshair */
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.45);
         cairo_set_line_width(cr, 1.0);
-        cairo_move_to(cr, cx, 0);   cairo_line_to(cr, cx, h);
-        cairo_move_to(cr, 0,  cy);  cairo_line_to(cr, w,  cy);
+        cairo_move_to(cr, cx, 0);  cairo_line_to(cr, cx, h);
+        cairo_move_to(cr, 0, cy);  cairo_line_to(cr, w, cy);
         cairo_stroke(cr);
 
-        /* Coordinate badge near the cursor */
+        /* Coordinate badge beside cursor */
         char pos[32];
         snprintf(pos, sizeof(pos), "%d, %d",
                  (int)cx + st->mon_ox, (int)cy + st->mon_oy);
-        double bx = cx + 68;
-        if (bx > w - 90) bx = cx - 68;
-        double by = cy - 26;
-        if (by < 24) by = cy + 30;
+        double bx = cx + 72;
+        if (bx > w - 100) bx = cx - 72;
+        double by = cy - 28;
+        if (by < 24)  by = cy + 32;
         draw_badge(cr, bx, by, pos, 12.0);
 
         /* Bottom hint */
-        draw_badge(cr, w / 2.0, h - 30,
-                   "Drag to select region   |   Esc = cancel", 13.5);
+        draw_badge(cr, w/2.0, h - 30,
+                   "Click and drag to select region   |   Esc = cancel", 13.5);
     }
 
 #ifndef SNAPX_USE_GTK4
@@ -278,77 +304,121 @@ static gboolean region_draw(GtkWidget *widget, cairo_t *cr, gpointer data)
 #endif
 }
 
-/* ── Confirm ─────────────────────────────────────────────────────────────── */
+/* ── Confirm (called on mouse-release) ──────────────────────────────────── */
 
 static void region_confirm(RegionState *st)
 {
     double rx, ry, rw, rh;
     normalise(st->start_x, st->start_y, st->cur_x, st->cur_y,
               &rx, &ry, &rw, &rh);
-    if (rw < 4 || rh < 4) { st->confirmed = FALSE; }
-    else {
-        /* Convert widget coords → virtual-desktop coords */
+    st->pressing = FALSE;
+    if (rw >= 4 && rh >= 4) {
         st->result.x      = (int)rx + st->mon_ox;
         st->result.y      = (int)ry + st->mon_oy;
         st->result.width  = (int)rw;
         st->result.height = (int)rh;
-        st->confirmed = TRUE;
+        st->confirmed     = TRUE;
+    } else {
+        st->confirmed = FALSE;
     }
     gtk_widget_set_visible(st->win, FALSE);
     g_main_loop_quit(st->loop);
 }
 
-/* ── Input ───────────────────────────────────────────────────────────────── */
+/* ── Input event handlers ────────────────────────────────────────────────── */
 
 #ifdef SNAPX_USE_GTK4
 
 static void reg_press(GtkGestureClick *g, int n, double x, double y, gpointer d)
-{ (void)g;(void)n; RegionState *st=d;
-  st->dragging=TRUE; st->start_x=x; st->start_y=y;
-  st->cur_x=x; st->cur_y=y; gtk_widget_queue_draw(st->win); }
+{
+    (void)g; (void)n;
+    RegionState *st = d;
+    st->pressing = TRUE;
+    st->start_x  = x;  st->start_y = y;
+    st->cur_x    = x;  st->cur_y   = y;
+    gtk_widget_queue_draw(st->da);
+}
 
 static void reg_release(GtkGestureClick *g, int n, double x, double y, gpointer d)
-{ (void)g;(void)n; RegionState *st=d; st->cur_x=x; st->cur_y=y; region_confirm(st); }
+{
+    (void)g; (void)n;
+    RegionState *st = d;
+    st->cur_x = x;  st->cur_y = y;
+    region_confirm(st);
+}
 
 static void reg_motion(GtkEventControllerMotion *c, double x, double y, gpointer d)
-{ (void)c; RegionState *st=d; st->mouse_x=x; st->mouse_y=y;
-  if(st->dragging){st->cur_x=x;st->cur_y=y;}
-  gtk_widget_queue_draw(st->win); }
+{
+    (void)c;
+    RegionState *st = d;
+    st->mouse_x = x;  st->mouse_y = y;
+    if (st->pressing) { st->cur_x = x;  st->cur_y = y; }
+    gtk_widget_queue_draw(st->da);
+}
 
 static gboolean reg_key(GtkEventControllerKey *c, guint kv, guint kc,
                           GdkModifierType mod, gpointer d)
-{ (void)c;(void)kc;(void)mod; RegionState *st=d;
-  if(kv==GDK_KEY_Escape){
-      st->confirmed=FALSE; gtk_widget_set_visible(st->win,FALSE);
-      g_main_loop_quit(st->loop); return TRUE; }
-  if((kv==GDK_KEY_Return||kv==GDK_KEY_space)&&st->dragging){
-      region_confirm(st); return TRUE; }
-  return FALSE; }
+{
+    (void)c; (void)kc; (void)mod;
+    RegionState *st = d;
+    if (kv == GDK_KEY_Escape) {
+        st->confirmed = FALSE;
+        gtk_widget_set_visible(st->win, FALSE);
+        g_main_loop_quit(st->loop);
+        return TRUE;
+    }
+    if ((kv == GDK_KEY_Return || kv == GDK_KEY_space) && st->pressing) {
+        region_confirm(st);
+        return TRUE;
+    }
+    return FALSE;
+}
 
 #else /* GTK3 */
 
-static gboolean reg_bp(GtkWidget *w,GdkEventButton *e,gpointer d)
-{ (void)w; RegionState *st=d;
-  if(e->button==1){ st->dragging=TRUE;
-    st->start_x=e->x;st->start_y=e->y;st->cur_x=e->x;st->cur_y=e->y;
-    gtk_widget_queue_draw(st->win); } return TRUE; }
+static gboolean reg_bp(GtkWidget *w, GdkEventButton *e, gpointer d)
+{
+    (void)w; RegionState *st = d;
+    if (e->button == 1) {
+        st->pressing = TRUE;
+        st->start_x = e->x;  st->start_y = e->y;
+        st->cur_x   = e->x;  st->cur_y   = e->y;
+        gtk_widget_queue_draw(st->da);
+    }
+    return TRUE;
+}
 
-static gboolean reg_br(GtkWidget *w,GdkEventButton *e,gpointer d)
-{ (void)w; RegionState *st=d;
-  if(e->button==1){st->cur_x=e->x;st->cur_y=e->y;region_confirm(st);} return TRUE; }
+static gboolean reg_br(GtkWidget *w, GdkEventButton *e, gpointer d)
+{
+    (void)w; RegionState *st = d;
+    if (e->button == 1) { st->cur_x = e->x; st->cur_y = e->y; region_confirm(st); }
+    return TRUE;
+}
 
-static gboolean reg_mo(GtkWidget *w,GdkEventMotion *e,gpointer d)
-{ (void)w; RegionState *st=d; st->mouse_x=e->x;st->mouse_y=e->y;
-  if(st->dragging){st->cur_x=e->x;st->cur_y=e->y;}
-  gtk_widget_queue_draw(st->win); return TRUE; }
+static gboolean reg_mo(GtkWidget *w, GdkEventMotion *e, gpointer d)
+{
+    (void)w; RegionState *st = d;
+    st->mouse_x = e->x;  st->mouse_y = e->y;
+    if (st->pressing) { st->cur_x = e->x; st->cur_y = e->y; }
+    gtk_widget_queue_draw(st->da);
+    return TRUE;
+}
 
-static gboolean reg_kp(GtkWidget *w,GdkEventKey *e,gpointer d)
-{ (void)w; RegionState *st=d;
-  if(e->keyval==GDK_KEY_Escape){
-      st->confirmed=FALSE;gtk_widget_set_visible(st->win,FALSE);
-      g_main_loop_quit(st->loop);return TRUE;}
-  if((e->keyval==GDK_KEY_Return||e->keyval==GDK_KEY_space)&&st->dragging){
-      region_confirm(st);return TRUE;} return FALSE; }
+static gboolean reg_kp(GtkWidget *w, GdkEventKey *e, gpointer d)
+{
+    (void)w; RegionState *st = d;
+    if (e->keyval == GDK_KEY_Escape) {
+        st->confirmed = FALSE;
+        gtk_widget_set_visible(st->win, FALSE);
+        g_main_loop_quit(st->loop);
+        return TRUE;
+    }
+    if ((e->keyval == GDK_KEY_Return || e->keyval == GDK_KEY_space) && st->pressing) {
+        region_confirm(st);
+        return TRUE;
+    }
+    return FALSE;
+}
 
 #endif
 
@@ -400,50 +470,55 @@ int snapx_overlay_select_region(GtkWindow        *parent,
     gtk_window_set_decorated(GTK_WINDOW(win), FALSE);
     if (parent) gtk_window_set_transient_for(GTK_WINDOW(win), parent);
 
-    /* For the transparent (X11) path, request an RGBA visual */
+    /* X11 transparent path: request RGBA visual */
     if (!background) {
 #ifndef SNAPX_USE_GTK4
         GdkScreen *scr = gtk_window_get_screen(GTK_WINDOW(win));
         GdkVisual *vis = gdk_screen_get_rgba_visual(scr);
         if (vis) gtk_widget_set_visual(win, vis);
         gtk_widget_set_app_paintable(win, TRUE);
-#endif
-        /* GTK4: set CSS transparent background */
-#ifdef SNAPX_USE_GTK4
+#else
         GtkCssProvider *css = gtk_css_provider_new();
-        gtk_css_provider_load_from_string(css,
-            "window { background-color: transparent; }");
-        gtk_style_context_add_provider_for_display(
-            gdk_display_get_default(),
-            GTK_STYLE_PROVIDER(css),
-            GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 10);
+        gtk_css_provider_load_from_string(css, "window { background: transparent; }");
+        gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+            GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 10);
         g_object_unref(css);
 #endif
     }
 
+    /* Drawing area — only used for rendering, no event controllers here */
+    GtkWidget *da = gtk_drawing_area_new();
+    st.da = da;
+
     gtk_window_fullscreen(GTK_WINDOW(win));
 
 #ifdef SNAPX_USE_GTK4
-    GtkWidget *da = gtk_drawing_area_new();
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(da),
                                     (GtkDrawingAreaDrawFunc)region_draw, &st, NULL);
     gtk_window_set_child(GTK_WINDOW(win), da);
 
+    /*
+     * Attach ALL input controllers to the WINDOW (not the drawing area).
+     * On Wayland, a fullscreen window is the Wayland surface — event delivery
+     * is more reliable when controllers are on the top-level widget.
+     * Coordinates are identical to drawing-area coords since da fills the window.
+     */
     GtkGesture *click = gtk_gesture_click_new();
     g_signal_connect(click, "pressed",  G_CALLBACK(reg_press),   &st);
     g_signal_connect(click, "released", G_CALLBACK(reg_release),  &st);
-    gtk_widget_add_controller(da, GTK_EVENT_CONTROLLER(click));
+    gtk_widget_add_controller(win, GTK_EVENT_CONTROLLER(click));
 
     GtkEventController *mot = gtk_event_controller_motion_new();
     g_signal_connect(mot, "motion", G_CALLBACK(reg_motion), &st);
-    gtk_widget_add_controller(da, mot);
+    gtk_widget_add_controller(win, mot);
 
     GtkEventController *key = gtk_event_controller_key_new();
     g_signal_connect(key, "key-pressed", G_CALLBACK(reg_key), &st);
     gtk_widget_add_controller(win, key);
+
     gtk_widget_set_focusable(win, TRUE);
+    gtk_widget_set_can_focus(win, TRUE);
 #else
-    GtkWidget *da = gtk_drawing_area_new();
     gtk_widget_set_events(da, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK
                               | GDK_POINTER_MOTION_MASK);
     g_signal_connect(da,  "draw",                 G_CALLBACK(region_draw), &st);
@@ -455,26 +530,27 @@ int snapx_overlay_select_region(GtkWindow        *parent,
     gtk_widget_show_all(win);
 #endif
 
+    /* Crosshair cursor */
 #ifdef SNAPX_USE_GTK4
     GdkCursor *cur = gdk_cursor_new_from_name("crosshair", NULL);
+    if (cur) { gtk_widget_set_cursor(win, cur); g_object_unref(cur); }
 #else
-    GdkCursor *cur = gdk_cursor_new_from_name(
-        gtk_widget_get_display(win), "crosshair");
-#endif
-    if (cur) {
-#ifdef SNAPX_USE_GTK4
-        gtk_widget_set_cursor(win, cur);
-#else
-        gdk_window_set_cursor(gtk_widget_get_window(win), cur);
-#endif
-        g_object_unref(cur);
+    /* Cursor can only be set after window is realized (show_all called above) */
+    {
+        GdkCursor *cur = gdk_cursor_new_from_name(
+            gtk_widget_get_display(win), "crosshair");
+        if (cur) {
+            gdk_window_set_cursor(gtk_widget_get_window(win), cur);
+            g_object_unref(cur);
+        }
     }
+#endif
 
     gtk_widget_set_visible(win, TRUE);
     gtk_widget_grab_focus(win);
 
-    /* Let GTK process pending events so the window is actually mapped and
-     * we can query which monitor it landed on. */
+    /* Drain the event queue so the window is mapped and the compositor
+     * can assign it to a monitor before we seed mon_geom. */
     while (g_main_context_pending(NULL))
         g_main_context_iteration(NULL, FALSE);
     get_monitor_geom(win, &st.mon_ox, &st.mon_oy, &st.mon_w, &st.mon_h);
