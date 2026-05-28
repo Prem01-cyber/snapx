@@ -288,7 +288,8 @@ static void rebuild_annot(MainWindow *mw)
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
     cairo_translate(cr, ox, oy);
     cairo_scale(cr, scale, scale);
-    snapx_canvas_render(mw->canvas, cr);
+    /* Only render committed strokes — pending is composited live in redraw() */
+    snapx_canvas_render_committed(mw->canvas, cr);
     cairo_destroy(cr);
     mw->annot_surface_valid = TRUE;
     snapx_toolbar_annot_clear_dirty();
@@ -381,13 +382,41 @@ static void redraw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
         cairo_paint(cr);
     }
 
-    /* Rebuild annotation surface if dirty */
-    if (snapx_toolbar_annot_dirty() || !mw->annot_surface_valid)
-        rebuild_annot(mw);
+    /* ── Annotation rendering ────────────────────────────────────────────── */
+    if (!mw->canvas) return;
 
-    if (mw->annot_surface && mw->annot_surface_valid) {
-        cairo_set_source_surface(cr, mw->annot_surface, 0, 0);
-        cairo_paint(cr);
+    if (snapx_toolbar_in_stroke()) {
+        /* Mid-stroke: use cached committed surface + render live pending stroke
+         * directly to cr each frame.  This gives zero-lag preview without
+         * rebuilding the full annotation cache on every motion event. */
+
+        /* Ensure committed cache is fresh (but may be empty for first stroke) */
+        if (!mw->annot_surface_valid)
+            rebuild_annot(mw);   /* builds committed-only surface */
+
+        if (mw->annot_surface) {
+            cairo_set_source_surface(cr, mw->annot_surface, 0, 0);
+            cairo_paint(cr);
+        }
+
+        /* Overlay the in-progress stroke directly */
+        double scale, ox, oy;
+        compute_viewport(mw, cw, ch, &scale, &ox, &oy);
+        cairo_save(cr);
+        cairo_translate(cr, ox, oy);
+        cairo_scale(cr, scale, scale);
+        snapx_canvas_render_pending(mw->canvas, cr);
+        cairo_restore(cr);
+    } else {
+        /* Idle: rebuild committed cache only when dirty (stroke was just committed
+         * or undo/redo was triggered).  Then blit — O(1) per frame. */
+        if (snapx_toolbar_annot_dirty() || !mw->annot_surface_valid)
+            rebuild_annot(mw);
+
+        if (mw->annot_surface && mw->annot_surface_valid) {
+            cairo_set_source_surface(cr, mw->annot_surface, 0, 0);
+            cairo_paint(cr);
+        }
     }
 }
 
@@ -523,21 +552,43 @@ static void on_capture_region(GtkButton *b, gpointer d)
 {
     (void)b;
     MainWindow *mw = (MainWindow *)d;
-    SnapxRegion region = {0};
-    if (!snapx_overlay_select_region(GTK_WINDOW(mw->win), &region)) return;
 
-    SnapxCaptureRequest req = {0};
-    req.mode           = SNAPX_CAPTURE_REGION;
-    req.region_x       = region.x;
-    req.region_y       = region.y;
-    req.region_w       = region.width;
-    req.region_h       = region.height;
-    req.include_cursor = mw->config->show_cursor;
-
+    /* ── Step 1: capture the full desktop silently ──────────────────────── */
+    /* Hide our window so it doesn't appear in the screenshot */
     gtk_widget_set_visible(GTK_WIDGET(mw->win), FALSE);
     while (g_main_context_iteration(NULL, FALSE)) {}
-    SnapxImage *img = snapx_capture(mw->backend, &req);
-    after_capture(mw, img, "Region captured.");
+
+    SnapxCaptureRequest full_req = {0};
+    full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
+    full_req.include_cursor = FALSE;   /* don't freeze the cursor into the bg */
+    SnapxImage *full = snapx_capture(mw->backend, &full_req);
+
+    gtk_widget_set_visible(GTK_WIDGET(mw->win), TRUE);
+    /* Don't present yet — overlay comes next */
+
+    if (!full) {
+        gtk_window_present(GTK_WINDOW(mw->win));
+        set_status(mw, "Region capture failed: could not take background screenshot.");
+        return;
+    }
+
+    /* ── Step 2: show freeze-frame overlay for region selection ─────────── */
+    SnapxRegion region = {0};
+    int ok = snapx_overlay_select_region(GTK_WINDOW(mw->win), full, &region);
+
+    gtk_window_present(GTK_WINDOW(mw->win));
+
+    if (!ok) {
+        snapx_image_free(full);
+        return;   /* user cancelled */
+    }
+
+    /* ── Step 3: crop the full screenshot to the selected region ─────────── */
+    SnapxImage *cropped = snapx_image_crop(full, region.x, region.y,
+                                             region.width, region.height);
+    snapx_image_free(full);
+
+    after_capture(mw, cropped, "Region captured.");
 }
 
 static void on_capture_window(GtkButton *b, gpointer d)

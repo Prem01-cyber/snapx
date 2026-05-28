@@ -183,6 +183,16 @@ int snapx_get_monitors(SnapxCaptureBackend *backend,
  */
 void snapx_capture_backend_destroy(SnapxCaptureBackend *backend);
 
+/**
+ * @brief Crop a region out of an existing image.
+ *
+ * Returns a newly allocated SnapxImage with only the specified rectangle.
+ * Coordinates are clamped to the source image boundaries.
+ * Returns NULL if the resulting crop would be empty or on allocation failure.
+ */
+SnapxImage *snapx_image_crop(const SnapxImage *src,
+                               int x, int y, int w, int h);
+
 /* ─── Backend init declarations (called by snapx_capture_backend_init) ───── */
 int snapx_capture_x11_init(SnapxCaptureBackend *backend);
 int  snapx_capture_wayland_init(SnapxCaptureBackend *backend);

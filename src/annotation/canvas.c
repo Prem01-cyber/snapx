@@ -221,33 +221,33 @@ void snapx_canvas_redo(SnapxAnnotationCanvas *canvas)
 
 /* ─── Render ─────────────────────────────────────────────────────────────── */
 
+#define MAX_ANNOT_DEPTH 1024
+
+/**
+ * Internal helper: walk the undo stack oldest-first into a local array,
+ * render each annotation.  Does NOT render the pending stroke.
+ */
+static void render_committed_internal(const SnapxAnnotationCanvas *canvas,
+                                       cairo_t *cr)
+{
+    const SnapxAnnotation *stack[MAX_ANNOT_DEPTH];
+    int depth = 0;
+    const SnapxAnnotation *a = canvas->undo_head;
+    while (a && depth < MAX_ANNOT_DEPTH) {
+        stack[depth++] = a;
+        const AnnNode *node = (const AnnNode *)stack[depth - 1];
+        a = node->prev ? &node->prev->ann : NULL;
+    }
+    for (int i = depth - 1; i >= 0; i--)
+        snapx_draw_annotation(cr, stack[i]);
+}
+
 void snapx_canvas_render(const SnapxAnnotationCanvas *canvas, cairo_t *cr)
 {
     if (!canvas || !cr) return;
+    render_committed_internal(canvas, cr);
 
-    /* Collect annotations in order (undo_head is most recent; render oldest first) */
-#define MAX_DEPTH 1024
-    const SnapxAnnotation *stack[MAX_DEPTH];
-    int depth = 0;
-    const SnapxAnnotation *a = canvas->undo_head;
-    while (a && depth < MAX_DEPTH) {
-        stack[depth++] = a;
-        a = &((AnnNode *)a)->prev->ann;  /* walk prev chain */
-        /* Guard: prev of head node is NULL */
-        if (!((AnnNode *)canvas->undo_head)[0].prev && depth > 0) {
-            /* Reached bottom */
-            break;
-        }
-        /* Safer traversal via AnnNode.prev */
-        const AnnNode *cur_node = (const AnnNode *)stack[depth - 1];
-        a = cur_node->prev ? &cur_node->prev->ann : NULL;
-    }
-
-    /* Render from oldest (bottom of stack) to newest */
-    for (int i = depth - 1; i >= 0; i--)
-        snapx_draw_annotation(cr, stack[i]);
-
-    /* Render pending (in-progress) stroke with slight transparency */
+    /* Render pending (in-progress) stroke at 80% opacity */
     if (canvas->pending) {
         cairo_save(cr);
         cairo_push_group(cr);
@@ -256,6 +256,28 @@ void snapx_canvas_render(const SnapxAnnotationCanvas *canvas, cairo_t *cr)
         cairo_paint_with_alpha(cr, 0.8);
         cairo_restore(cr);
     }
+}
+
+void snapx_canvas_render_committed(const SnapxAnnotationCanvas *canvas, cairo_t *cr)
+{
+    if (!canvas || !cr) return;
+    render_committed_internal(canvas, cr);
+}
+
+void snapx_canvas_render_pending(const SnapxAnnotationCanvas *canvas, cairo_t *cr)
+{
+    if (!canvas || !cr || !canvas->pending) return;
+    cairo_save(cr);
+    cairo_push_group(cr);
+    snapx_draw_annotation(cr, canvas->pending);
+    cairo_pop_group_to_source(cr);
+    cairo_paint_with_alpha(cr, 0.8);
+    cairo_restore(cr);
+}
+
+int snapx_canvas_has_pending(const SnapxAnnotationCanvas *canvas)
+{
+    return canvas && canvas->pending ? 1 : 0;
 }
 
 /* ─── Flatten ────────────────────────────────────────────────────────────── */

@@ -60,10 +60,33 @@ void snapx_canvas_redo(SnapxAnnotationCanvas *canvas);
 
 /**
  * @brief Render all committed annotations onto the Cairo context.
+ * Also renders the in-progress (pending) stroke at 80% opacity.
  * @param canvas  The annotation canvas.
  * @param cr      Cairo context (image coordinates).
  */
 void snapx_canvas_render(const SnapxAnnotationCanvas *canvas, cairo_t *cr);
+
+/**
+ * @brief Render ONLY committed (finished) annotations — no pending stroke.
+ *
+ * Use this to populate a long-lived cache surface.  The cache is valid
+ * until the next stroke is committed (i.e. stroke_end is called).
+ */
+void snapx_canvas_render_committed(const SnapxAnnotationCanvas *canvas, cairo_t *cr);
+
+/**
+ * @brief Render ONLY the in-progress (pending) stroke.
+ *
+ * Returns immediately if there is no pending stroke.
+ * Composite this on top of a committed-cache surface each frame for
+ * zero-lag live preview without rebuilding the full cache.
+ */
+void snapx_canvas_render_pending(const SnapxAnnotationCanvas *canvas, cairo_t *cr);
+
+/**
+ * @brief Return non-zero if a stroke is currently in progress.
+ */
+int snapx_canvas_has_pending(const SnapxAnnotationCanvas *canvas);
 
 /**
  * @brief Create a new SnapxImage with all annotations composited onto it.

@@ -55,4 +55,12 @@ gboolean snapx_toolbar_annot_dirty(void);
  */
 void snapx_toolbar_annot_clear_dirty(void);
 
+/**
+ * @brief Return TRUE if the user is currently mid-stroke (mouse held down).
+ *
+ * Used by the redraw path to decide whether to bypass the annotation cache
+ * and render the live in-progress stroke directly to the screen.
+ */
+gboolean snapx_toolbar_in_stroke(void);
+
 #endif /* SNAPX_TOOLBAR_H */

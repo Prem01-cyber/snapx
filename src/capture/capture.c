@@ -46,6 +46,30 @@ void snapx_image_free(SnapxImage *img)
     free(img);
 }
 
+SnapxImage *snapx_image_crop(const SnapxImage *src,
+                               int x, int y, int w, int h)
+{
+    if (!src || !src->data) return NULL;
+
+    /* Clamp to source bounds */
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > src->width)  w = src->width  - x;
+    if (y + h > src->height) h = src->height - y;
+    if (w <= 0 || h <= 0) return NULL;
+
+    SnapxImage *dst = snapx_image_alloc(w, h);
+    if (!dst) return NULL;
+    dst->scale = src->scale;
+
+    for (int row = 0; row < h; row++) {
+        const uint8_t *src_row = src->data + (y + row) * src->stride + x * 4;
+        uint8_t       *dst_row = dst->data +        row * dst->stride;
+        memcpy(dst_row, src_row, (size_t)(w * 4));
+    }
+    return dst;
+}
+
 /* ─── Backend init ───────────────────────────────────────────────────────── */
 
 int snapx_capture_backend_init(SnapxCaptureBackend *backend, SnapxBackendType type)

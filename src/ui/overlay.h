@@ -6,27 +6,33 @@
 #ifndef SNAPX_OVERLAY_H
 #define SNAPX_OVERLAY_H
 
-#ifdef SNAPX_USE_GTK4
-#  include <gtk/gtk.h>
-#elif defined(SNAPX_USE_GTK3)
+#if defined(SNAPX_USE_GTK4) || defined(SNAPX_USE_GTK3)
 #  include <gtk/gtk.h>
 #endif
 
-/** @brief Selected rectangular region in screen coordinates. */
+#include "../capture/capture.h"
+
+/** @brief Selected rectangular region in image coordinates. */
 typedef struct {
     int x, y;
     int width, height;
 } SnapxRegion;
 
 /**
- * @brief Show a full-screen transparent overlay and let the user draw a region.
+ * @brief Show a fullscreen freeze-frame region-selection overlay.
  *
- * Blocks until the user confirms (Enter / mouse release) or cancels (Escape).
+ * Displays @p background as a full-screen frozen screenshot so the user
+ * can see exactly what they are cropping across all monitors.
+ * The returned region coordinates are in @p background pixel space.
  *
- * @param parent  Parent window (may be NULL).
- * @param region  Output region in root/screen coordinates.
- * @return 1 if a region was selected, 0 if cancelled.
+ * @param parent     Transient-for window (may be NULL).
+ * @param background Pre-captured full-desktop screenshot.  If NULL the overlay
+ *                   falls back to a semi-transparent dim (legacy mode).
+ * @param region     Output: selected rectangle in background pixel coordinates.
+ * @return 1 if a region was confirmed, 0 if cancelled.
  */
-int snapx_overlay_select_region(GtkWindow *parent, SnapxRegion *region);
+int snapx_overlay_select_region(GtkWindow        *parent,
+                                  const SnapxImage *background,
+                                  SnapxRegion      *region);
 
 #endif /* SNAPX_OVERLAY_H */

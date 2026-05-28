@@ -230,6 +230,11 @@ void snapx_toolbar_annot_clear_dirty(void)
     g_tb.annot_dirty = FALSE;
 }
 
+gboolean snapx_toolbar_in_stroke(void)
+{
+    return g_tb.in_stroke;
+}
+
 /* ─── Widget construction ────────────────────────────────────────────────── */
 
 GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
