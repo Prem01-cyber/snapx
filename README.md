@@ -41,7 +41,7 @@ Pre-built binaries are published on the [Releases](https://github.com/Prem01-cyb
 | Linux (Wayland) | XDG Desktop Portal (`xdg-desktop-portal` + backend, e.g. `xdg-desktop-portal-gnome` on GNOME) |
 | Linux (Wayland, optional ScreenCast) | PipeWire |
 | Linux (X11) | X11 session with RandR |
-| Windows | Windows 7 SP1 or newer (DXGI on 8+) |
+| Windows | Windows 10 or newer (DXGI; GDI fallback on older builds) |
 | macOS | macOS 10.13+ (ScreenCaptureKit on 12.3+) |
 
 The Linux AppImage bundles GTK4 and image libraries. It still relies on your session’s **portal** for Wayland capture (same as most screenshot tools on modern desktops).
@@ -88,7 +88,7 @@ Release builds are **not notarized**. On first launch: right-click the app → *
 | **Linux** | Wayland + portal | XDG Screenshot (default); optional ScreenCast + PipeWire | GTK4 / GTK3 |
 | **Linux** | X11 / Xorg | libX11 + XRandR + XFixes | GTK4 / GTK3 |
 | **Windows 10/11** | — | DXGI Desktop Duplication | GTK4 (MSYS2) |
-| **Windows 7/8** | — | GDI BitBlt | GTK3 / GTK4 |
+| **Windows 8** | — | GDI BitBlt | GTK4 (MSYS2) |
 | **macOS 12.3+** | — | ScreenCaptureKit | GTK4 (Homebrew) |
 | **macOS 10.13–12.2** | — | CoreGraphics | GTK3 / GTK4 |
 

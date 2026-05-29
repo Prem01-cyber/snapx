@@ -2,7 +2,7 @@
 ; Build: iscc installer.iss
 
 #define MyAppName      "snapx"
-#define MyAppVersion   "1.0.0"
+#define MyAppVersion   "1.1.0"
 #define MyAppPublisher "snapx Team"
 #define MyAppURL       "https://github.com/Prem01-cyber/snapx"
 #define MyAppExeName   "snapx.exe"
@@ -30,7 +30,7 @@ PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ArchitecturesInstallIn64BitMode=x64
-MinVersion=6.1.7601   ; Windows 7 SP1
+MinVersion=10.0
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
