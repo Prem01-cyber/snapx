@@ -283,8 +283,12 @@ static void probe_linux(SnapxPlatformInfo *info, int quiet)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#ifndef NTSTATUS
+typedef LONG NTSTATUS;
+#endif
+
 /* RtlGetVersion doesn't lie about Win10+ (VerifyVersionInfo does) */
-typedef NTSTATUS (WINAPI *RtlGetVersion_t)(LPOSVERSIONINFOEXW);
+typedef NTSTATUS (WINAPI *RtlGetVersion_t)(OSVERSIONINFOEXW *);
 
 static void get_windows_version(int *major, int *minor, int *build)
 {
@@ -293,7 +297,8 @@ static void get_windows_version(int *major, int *minor, int *build)
     if (!ntdll) return;
     RtlGetVersion_t fn = (RtlGetVersion_t)GetProcAddress(ntdll, "RtlGetVersion");
     if (!fn) return;
-    OSVERSIONINFOEXW vi = { sizeof(vi) };
+    OSVERSIONINFOEXW vi = {0};
+    vi.dwOSVersionInfoSize = sizeof(vi);
     if (fn(&vi) == 0) {
         *major = (int)vi.dwMajorVersion;
         *minor = (int)vi.dwMinorVersion;

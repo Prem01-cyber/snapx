@@ -165,7 +165,9 @@ jobs:
   release:
     needs: [build-linux, build-windows, build-macos, build-fedora-rpm]
     runs-on: ubuntu-latest
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    if: >-
+      always() && !cancelled() &&
+      (needs.build-linux.result == 'success' || needs.build-fedora-rpm.result == 'success')
     steps:
       - uses: actions/checkout@v4
 

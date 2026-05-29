@@ -12,6 +12,12 @@ DMG="${OUT}/snapx-${VERSION}-macos.dmg"
 cd "$ROOT"
 bash packaging/icons/generate-icons.sh 2>/dev/null || true
 
+if command -v brew >/dev/null 2>&1; then
+    BREW_PREFIX="$(brew --prefix)"
+    export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}:${BREW_PREFIX}/lib/pkgconfig:${BREW_PREFIX}/share/pkgconfig"
+    export DYLD_LIBRARY_PATH="${BREW_PREFIX}/lib:${DYLD_LIBRARY_PATH:-}"
+fi
+
 cmake -B "$BUILD" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$BUILD" -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 

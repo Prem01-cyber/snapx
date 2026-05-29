@@ -314,6 +314,9 @@ if(PLATFORM_WINDOWS)
 endif()
 
 if(PLATFORM_MACOS)
+    if(GTK4_FOUND AND GTK4_LIBRARY_DIRS)
+        target_link_directories(snapx PRIVATE ${GTK4_LIBRARY_DIRS})
+    endif()
     target_link_libraries(snapx PRIVATE
         ${COREGRAPHICS_LIB}
         ${COREFOUNDATION_LIB}
