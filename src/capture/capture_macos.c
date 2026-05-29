@@ -236,7 +236,7 @@ static SnapxImage *sck_capture_display(CGDirectDisplayID display_id)
         __block CGImageRef captured = nil;
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
-        SCShareableContent *content = nil;
+        __block SCShareableContent *content = nil;
         __block NSError *err = nil;
         dispatch_semaphore_t content_sem = dispatch_semaphore_create(0);
         [SCShareableContent getShareableContentWithCompletionHandler:

@@ -308,7 +308,8 @@ static int win_add_entry(const char *spec, SnapxHotkeyAction action)
 static unsigned int __stdcall hotkey_thread(void *arg)
 {
     (void)arg;
-    WNDCLASSEXW wc = { sizeof(wc) };
+    WNDCLASSEXW wc = {0};
+    wc.cbSize        = sizeof(wc);
     wc.lpfnWndProc   = DefWindowProcW;
     wc.lpszClassName = L"SnapxHotkeyWnd";
     RegisterClassExW(&wc);
