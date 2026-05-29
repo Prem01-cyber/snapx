@@ -14,6 +14,8 @@
 
 #include "overlay.h"
 #include "../utils/shortcut.h"
+#include "../utils/config.h"
+#include "../capture/capture.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -81,7 +83,7 @@ typedef struct {
     GtkWidget        *da;
     GtkWidget        *wins[8];    /**< per-monitor mode: one per display      */
     GtkWidget        *das[8];
-    int               n_windows;
+    int               n_overlay_wins;
     GMainLoop        *loop;
     SnapxRegion       result;
     gboolean          confirmed;
@@ -108,6 +110,11 @@ typedef struct {
     guint             logged_slice_mask;
 
     const SnapxShortcuts *shortcuts;
+    const SnapxConfig    *cfg;
+    SnapxWindowInfo       windows[64];
+    int                   n_win_list;
+    int                   hover_win;
+    gboolean              show_loupe;
 } RegionState;
 
 /** Per-window draw context (GTK4); avoids GINT_TO_POINTER(0) == NULL. */
@@ -125,6 +132,12 @@ static void get_monitor_geom(GtkWidget *win,
 static void region_queue_draw_all(RegionState *st);
 static void region_close_all(RegionState *st);
 static gboolean region_get_pointer_vd(int *vx, int *vy);
+static void draw_loupe_at(RegionState *st, cairo_t *cr, int w, int h,
+                          double cx, double cy, int mon_ox, int mon_oy);
+static void draw_window_highlights_at(RegionState *st, cairo_t *cr,
+                                      int mon_ox, int mon_oy, int mon_w, int mon_h);
+static void region_update_hover(RegionState *st, int vx, int vy);
+static gboolean region_snap_window(RegionState *st);
 static GdkMonitor *find_gdk_monitor_for_info(GdkDisplay *dpy,
                                                const SnapxMonitorInfo *m);
 
@@ -173,7 +186,7 @@ static void region_calc_virt_bounds(const SnapxMonitorInfo *mons, int n,
 static void region_queue_draw_all(RegionState *st)
 {
     if (st->per_monitor_mode) {
-        for (int i = 0; i < st->n_windows; i++) {
+        for (int i = 0; i < st->n_overlay_wins; i++) {
             if (st->das[i])
                 gtk_widget_queue_draw(st->das[i]);
         }
@@ -185,14 +198,14 @@ static void region_queue_draw_all(RegionState *st)
 static void region_close_all(RegionState *st)
 {
     if (st->per_monitor_mode) {
-        for (int i = 0; i < st->n_windows; i++) {
+        for (int i = 0; i < st->n_overlay_wins; i++) {
             if (st->wins[i]) {
                 gtk_window_destroy(GTK_WINDOW(st->wins[i]));
                 st->wins[i] = NULL;
                 st->das[i]  = NULL;
             }
         }
-        st->n_windows = 0;
+        st->n_overlay_wins = 0;
     } else if (st->win) {
         gtk_widget_set_visible(st->win, FALSE);
     }
@@ -562,6 +575,8 @@ idle_overlay:
         draw_badge(cr, bx, by, pos, 12.0);
         draw_badge(cr, w / 2.0, h - 30,
                    "Drag across monitors to select   |   Esc = cancel", 13.5);
+        draw_window_highlights_at(st, cr, m->x, m->y, m->width, m->height);
+        draw_loupe_at(st, cr, w, h, cx, cy, m->x, m->y);
     }
 }
 
@@ -663,11 +678,93 @@ static gboolean region_draw(GtkWidget *widget, cairo_t *cr, gpointer data)
         draw_badge(cr, bx, by, pos, 12.0);
         draw_badge(cr, w / 2.0, h - 30,
                    "Click and drag to select region   |   Esc = cancel", 13.5);
+        draw_window_highlights_at(st, cr, st->mon_ox, st->mon_oy,
+                                  st->mon_w, st->mon_h);
+        draw_loupe_at(st, cr, w, h, cx, cy, st->mon_ox, st->mon_oy);
     }
 
 #ifndef SNAPX_USE_GTK4
     return FALSE;
 #endif
+}
+
+static void region_update_hover(RegionState *st, int vx, int vy)
+{
+    st->hover_win = -1;
+    if (!st->cfg || !st->cfg->window_snap_enabled || st->n_win_list <= 0)
+        return;
+    for (int i = 0; i < st->n_win_list; i++) {
+        SnapxWindowInfo *wi = &st->windows[i];
+        if (vx >= wi->x && vx < wi->x + wi->w &&
+            vy >= wi->y && vy < wi->y + wi->h) {
+            st->hover_win = i;
+            return;
+        }
+    }
+}
+
+static gboolean region_snap_window(RegionState *st)
+{
+    if (!st->cfg || !st->cfg->window_snap_enabled ||
+        st->hover_win < 0 || st->pressing)
+        return FALSE;
+    SnapxWindowInfo *wi = &st->windows[st->hover_win];
+    st->result.x      = wi->x;
+    st->result.y      = wi->y;
+    st->result.width  = wi->w;
+    st->result.height = wi->h;
+    st->confirmed     = TRUE;
+    region_close_all(st);
+    g_main_loop_quit(st->loop);
+    return TRUE;
+}
+
+static void draw_loupe_at(RegionState *st, cairo_t *cr, int w, int h,
+                          double cx, double cy, int mon_ox, int mon_oy)
+{
+    if (!st->cfg || !st->cfg->magnifier_enabled || !st->show_loupe || !st->bg_surf)
+        return;
+
+    int zoom = st->cfg->magnifier_zoom > 1 ? st->cfg->magnifier_zoom : 8;
+    int loupe = 96;
+    double lx = cx + 24, ly = cy + 24;
+    if (lx + loupe > w) lx = cx - loupe - 24;
+    if (ly + loupe > h) ly = cy - loupe - 24;
+
+    cairo_save(cr);
+    cairo_arc(cr, lx + loupe / 2.0, ly + loupe / 2.0, loupe / 2.0, 0, 2 * G_PI);
+    cairo_clip(cr);
+
+    int src_x = mon_ox + (int)cx - loupe / (2 * zoom);
+    int src_y = mon_oy + (int)cy - loupe / (2 * zoom);
+    cairo_translate(cr, lx, ly);
+    cairo_scale(cr, (double)zoom, (double)zoom);
+    cairo_set_source_surface(cr, st->bg_surf, -src_x, -src_y);
+    cairo_paint(cr);
+    cairo_restore(cr);
+
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.9);
+    cairo_set_line_width(cr, 2);
+    cairo_arc(cr, lx + loupe / 2.0, ly + loupe / 2.0, loupe / 2.0, 0, 2 * G_PI);
+    cairo_stroke(cr);
+    (void)h;
+}
+
+static void draw_window_highlights_at(RegionState *st, cairo_t *cr,
+                                      int mon_ox, int mon_oy, int mon_w, int mon_h)
+{
+    if (!st->cfg || !st->cfg->window_snap_enabled || st->hover_win < 0)
+        return;
+    SnapxWindowInfo *wi = &st->windows[st->hover_win];
+    double rx = wi->x - mon_ox;
+    double ry = wi->y - mon_oy;
+    double rw = wi->w, rh = wi->h;
+    if (rx + rw <= 0 || ry + rh <= 0 || rx >= mon_w || ry >= mon_h)
+        return;
+    cairo_set_source_rgba(cr, 0.2, 0.7, 1.0, 0.85);
+    cairo_set_line_width(cr, 3);
+    cairo_rectangle(cr, rx, ry, rw, rh);
+    cairo_stroke(cr);
 }
 
 /* ── Confirm (called on mouse-release) ──────────────────────────────────── */
@@ -733,6 +830,8 @@ static void reg_press(GtkGestureClick *g, int n, double x, double y, gpointer d)
 {
     (void)n;
     RegionState *st = d;
+    if (region_snap_window(st))
+        return;
     st->pressing = TRUE;
     if (st->per_monitor_mode) {
         GtkWidget *win = gtk_event_controller_get_widget(
@@ -785,6 +884,7 @@ static void reg_motion(GtkEventControllerMotion *c, double x, double y, gpointer
             st->cur_vx = vx;
             st->cur_vy = vy;
         }
+        region_update_hover(st, vx, vy);
     } else {
         (void)c;
         st->mouse_x = x;
@@ -793,6 +893,7 @@ static void reg_motion(GtkEventControllerMotion *c, double x, double y, gpointer
             st->cur_x = x;
             st->cur_y = y;
         }
+        region_update_hover(st, (int)(x + st->mon_ox), (int)(y + st->mon_oy));
     }
     region_queue_draw_all(st);
 }
@@ -808,8 +909,26 @@ static gboolean reg_key(GtkEventControllerKey *c, guint kv, guint kc,
         g_main_loop_quit(st->loop);
         return TRUE;
     }
+    if (kv == GDK_KEY_space) {
+        st->show_loupe = TRUE;
+        region_queue_draw_all(st);
+        return TRUE;
+    }
     if (st->pressing && region_key_confirm(st, kv, mod)) {
         region_confirm(st);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static gboolean reg_key_released(GtkEventControllerKey *c, guint kv, guint kc,
+                                 GdkModifierType mod, gpointer d)
+{
+    (void)c; (void)kc; (void)mod;
+    RegionState *st = d;
+    if (kv == GDK_KEY_space) {
+        st->show_loupe = FALSE;
+        region_queue_draw_all(st);
         return TRUE;
     }
     return FALSE;
@@ -821,6 +940,8 @@ static gboolean reg_bp(GtkWidget *w, GdkEventButton *e, gpointer d)
 {
     RegionState *st = d;
     if (e->button == 1) {
+        if (region_snap_window(st))
+            return TRUE;
         st->pressing = TRUE;
         if (st->per_monitor_mode) {
             GtkWidget *win = gtk_widget_get_toplevel(w);
@@ -874,6 +995,7 @@ static gboolean reg_mo(GtkWidget *w, GdkEventMotion *e, gpointer d)
             st->cur_vx = vx;
             st->cur_vy = vy;
         }
+        region_update_hover(st, vx, vy);
     } else {
         (void)w;
         st->mouse_x = e->x;
@@ -882,6 +1004,7 @@ static gboolean reg_mo(GtkWidget *w, GdkEventMotion *e, gpointer d)
             st->cur_x = e->x;
             st->cur_y = e->y;
         }
+        region_update_hover(st, (int)(e->x + st->mon_ox), (int)(e->y + st->mon_oy));
     }
     region_queue_draw_all(st);
     return TRUE;
@@ -897,8 +1020,25 @@ static gboolean reg_kp(GtkWidget *w, GdkEventKey *e, gpointer d)
         g_main_loop_quit(st->loop);
         return TRUE;
     }
+    if (e->keyval == GDK_KEY_space) {
+        st->show_loupe = TRUE;
+        region_queue_draw_all(st);
+        return TRUE;
+    }
     if (st->pressing && region_key_confirm(st, e->keyval, e->state)) {
         region_confirm(st);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static gboolean reg_kr(GtkWidget *w, GdkEventKey *e, gpointer d)
+{
+    (void)w;
+    RegionState *st = d;
+    if (e->keyval == GDK_KEY_space) {
+        st->show_loupe = FALSE;
+        region_queue_draw_all(st);
         return TRUE;
     }
     return FALSE;
@@ -995,6 +1135,7 @@ static void region_attach_controllers(GtkWidget *win, RegionState *st)
 
     GtkEventController *key = gtk_event_controller_key_new();
     g_signal_connect(key, "key-pressed", G_CALLBACK(reg_key), st);
+    g_signal_connect(key, "key-released", G_CALLBACK(reg_key_released), st);
     gtk_widget_add_controller(win, key);
 
     gtk_widget_set_focusable(win, TRUE);
@@ -1032,7 +1173,7 @@ static gboolean region_run_per_monitor(RegionState *st, GdkDisplay *dpy)
 #else
         GtkWidget *win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 #endif
-        int wi = st->n_windows;
+        int wi = st->n_overlay_wins;
         if (wi >= 8) {
             g_object_unref(gmon);
             continue;
@@ -1063,6 +1204,7 @@ static gboolean region_run_per_monitor(RegionState *st, GdkDisplay *dpy)
         g_signal_connect(da, "button-release-event", G_CALLBACK(reg_br), st);
         g_signal_connect(da, "motion-notify-event", G_CALLBACK(reg_mo), st);
         g_signal_connect(win, "key-press-event", G_CALLBACK(reg_kp), st);
+        g_signal_connect(win, "key-release-event", G_CALLBACK(reg_kr), st);
         gtk_container_add(GTK_CONTAINER(win), da);
 #endif
 
@@ -1073,10 +1215,10 @@ static gboolean region_run_per_monitor(RegionState *st, GdkDisplay *dpy)
         region_set_crosshair_cursor(win);
         if (wi == 0)
             gtk_widget_grab_focus(win);
-        st->n_windows++;
+        st->n_overlay_wins++;
     }
 
-    if (st->n_windows == 0)
+    if (st->n_overlay_wins == 0)
         return FALSE;
 
 #ifndef SNAPX_USE_GTK4
@@ -1103,12 +1245,17 @@ int snapx_overlay_select_region(GtkWindow              *parent,
                                   const SnapxMonitorInfo *monitors,
                                   int                     n_monitors,
                                   const SnapxShortcuts   *shortcuts,
+                                  const SnapxConfig      *cfg,
                                   SnapxRegion            *region)
 {
     RegionState st = {0};
     st.loop       = g_main_loop_new(NULL, FALSE);
     st.background = background;
     st.shortcuts  = shortcuts;
+    st.cfg        = cfg;
+    st.hover_win  = -1;
+    if (cfg && cfg->window_snap_enabled)
+        st.n_win_list = snapx_list_windows(st.windows, 64);
     (void)parent;
     if (background)
         st.bg_surf = image_to_cairo(background);
@@ -1189,6 +1336,7 @@ int snapx_overlay_select_region(GtkWindow              *parent,
     g_signal_connect(da,  "button-release-event", G_CALLBACK(reg_br),      &st);
     g_signal_connect(da,  "motion-notify-event",  G_CALLBACK(reg_mo),      &st);
     g_signal_connect(win, "key-press-event",       G_CALLBACK(reg_kp),     &st);
+    g_signal_connect(win, "key-release-event",     G_CALLBACK(reg_kr),     &st);
     gtk_container_add(GTK_CONTAINER(win), da);
     gtk_widget_show_all(win);
 #endif

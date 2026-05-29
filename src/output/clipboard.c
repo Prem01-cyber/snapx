@@ -73,6 +73,27 @@ void snapx_clipboard_copy_image(const SnapxImage *img)
     fprintf(stderr, "[clipboard] Image copied to clipboard.\n");
 }
 
+void snapx_clipboard_copy_text(const char *text)
+{
+    if (!text || !text[0]) return;
+
+#if defined(SNAPX_USE_GTK4) && !defined(SNAPX_HEADLESS)
+    GdkDisplay *dpy = gdk_display_get_default();
+    if (!dpy) return;
+    GdkClipboard *cb = gdk_display_get_clipboard(dpy);
+    gdk_clipboard_set_text(cb, text);
+    fprintf(stderr, "[clipboard] Text copied to clipboard.\n");
+#elif !defined(SNAPX_HEADLESS)
+    GtkClipboard *cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+    gtk_clipboard_set_text(cb, text, -1);
+    gtk_clipboard_store(cb);
+    fprintf(stderr, "[clipboard] Text copied to clipboard.\n");
+#else
+    (void)text;
+    fprintf(stderr, "[clipboard] Text clipboard not available in headless build.\n");
+#endif
+}
+
 #elif !defined(SNAPX_HEADLESS)  /* GTK3 */
 
 void snapx_clipboard_copy_image(const SnapxImage *img)
@@ -92,12 +113,27 @@ void snapx_clipboard_copy_image(const SnapxImage *img)
     fprintf(stderr, "[clipboard] Image copied to clipboard.\n");
 }
 
+void snapx_clipboard_copy_text(const char *text)
+{
+    if (!text || !text[0]) return;
+    GtkClipboard *cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+    gtk_clipboard_set_text(cb, text, -1);
+    gtk_clipboard_store(cb);
+    fprintf(stderr, "[clipboard] Text copied to clipboard.\n");
+}
+
 #else  /* SNAPX_HEADLESS - no clipboard support */
 
 void snapx_clipboard_copy_image(const SnapxImage *img)
 {
     (void)img;
     fprintf(stderr, "[clipboard] Clipboard not available in headless build.\n");
+}
+
+void snapx_clipboard_copy_text(const char *text)
+{
+    (void)text;
+    fprintf(stderr, "[clipboard] Text clipboard not available in headless build.\n");
 }
 
 #endif  /* GTK3 / headless */
@@ -151,6 +187,29 @@ void snapx_clipboard_copy_image(const SnapxImage *img)
     SetClipboardData(CF_DIB, hGlobal);
     CloseClipboard();
     fprintf(stderr, "[clipboard] Image copied to clipboard.\n");
+}
+
+void snapx_clipboard_copy_text(const char *text)
+{
+    if (!text || !text[0]) return;
+    if (!OpenClipboard(NULL)) return;
+    EmptyClipboard();
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, text, -1, NULL, 0);
+    if (wlen > 0) {
+        HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, (SIZE_T)wlen * sizeof(wchar_t));
+        if (h) {
+            wchar_t *ws = (wchar_t *)GlobalLock(h);
+            if (ws) {
+                MultiByteToWideChar(CP_UTF8, 0, text, -1, ws, wlen);
+                GlobalUnlock(h);
+                SetClipboardData(CF_UNICODETEXT, h);
+            } else {
+                GlobalFree(h);
+            }
+        }
+    }
+    CloseClipboard();
+    fprintf(stderr, "[clipboard] Text copied to clipboard.\n");
 }
 
 #endif /* SNAPX_PLATFORM_WINDOWS */

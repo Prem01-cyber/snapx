@@ -34,7 +34,7 @@ Pre-built binaries are on the [Releases](https://github.com/Prem01-cyber/snapx/r
 |--------|--------|
 | **Fedora / RHEL** | Download the `.rpm` from [Releases](https://github.com/Prem01-cyber/snapx/releases/latest), or build locally: `./packaging/linux/build-rpm.sh` |
 | **Arch Linux** | Build from [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD) with `makepkg -si` |
-| **Flatpak** | Not yet available |
+| **Flatpak** | `flatpak install io.github.snapx` (bundle on [Releases](https://github.com/Prem01-cyber/snapx/releases/latest); Flathub submission pending) |
 
 ### System requirements (runtime)
 
@@ -74,7 +74,12 @@ Release builds are **not notarized**. On first launch: right-click the app → *
 |----------|---------|
 | **Capture modes** | Full screen, single monitor, region, active window, delayed capture |
 | **Multi-monitor** | Enumerate monitors; region selection spans edges with correct HiDPI slicing |
-| **Annotation** | Rectangle, arrow, pen, text, blur/pixelate, highlight |
+| **Annotation** | Rectangle, arrow, pen, text (popover entry), blur/pixelate, highlight, numbered callouts, redaction |
+| **Region overlay** | Magnifier loupe (hold Space), snap-to-window highlight |
+| **Upload / share** | Imgur or custom POST URL; copy link after upload (optional libcurl) |
+| **OCR** | Copy text from capture (optional Tesseract; language in Settings) |
+| **Workflow** | Pin to screen, post-capture crop, recent-captures sidebar, session D-Bus IPC |
+| **Background** | Close-to-tray, `--background`, autostart desktop file |
 | **Output** | PNG, JPEG (quality 1–100), WebP |
 | **Clipboard** | Manual copy or auto-copy after each capture (Settings) |
 | **Hotkeys** | Global hotkeys: X11 & Windows (native); **Wayland** via portal GlobalShortcuts; in-app shortcuts always available |
@@ -129,7 +134,44 @@ snapx -m active -c -o ~/Pictures/window.png
 
 # Monitor 1, JPEG quality 85
 snapx -m monitor -M 1 -f jpeg -q 85 -n -o ~/Pictures/monitor1.jpg
+
+# Upload and copy URL (headless; set imgur_client_id in config.ini)
+snapx -n -m region -o /tmp/s.png --upload --copy-url
 ```
+
+### Upload configuration
+
+```ini
+[upload]
+service = imgur          ; imgur | custom | none
+imgur_client_id =        ; from https://api.imgur.com/oauth2/addclient (anonymous)
+custom_url =             ; e.g. https://paste.example.com/upload
+copy_url_after_upload = 1
+auto_upload = 0
+```
+
+Build with libcurl for upload support: `sudo dnf install libcurl-devel` (Fedora) then reconfigure CMake.
+
+### D-Bus automation
+
+When the GUI is running, snapx registers **`io.github.snapx`** on the session bus:
+
+```bash
+gdbus call --session -d io.github.snapx -o /io/github/snapx \
+  -m io.github.snapx.CaptureRegion
+gdbus call --session -d io.github.snapx -o /io/github/snapx \
+  -m io.github.snapx.GetLastPath
+gdbus call --session -d io.github.snapx -o /io/github/snapx \
+  -m io.github.snapx.Save s "$HOME/Pictures/out.png"
+```
+
+### Background / autostart
+
+```bash
+snapx --background
+```
+
+Copy [`packaging/linux/io.github.snapx-autostart.desktop`](packaging/linux/io.github.snapx-autostart.desktop) to `~/.config/autostart/` to launch at login. Enable **Close to tray** in Settings to hide instead of quitting.
 
 ### CLI options
 
@@ -142,6 +184,9 @@ snapx -m monitor -M 1 -f jpeg -q 85 -n -o ~/Pictures/monitor1.jpg
 | `-f, --format` | `png` \| `jpeg` \| `webp` |
 | `-q, --quality` | JPEG quality 1–100 (default 90) |
 | `-c, --clipboard` | Also copy to clipboard |
+| `--upload` | Upload after capture (uses `[upload]` config; requires libcurl build) |
+| `--copy-url` | Copy upload URL to clipboard (with `--upload`) |
+| `--background` | Start hidden; keep running for hotkeys/tray |
 | `-n, --no-gui` | Capture without showing the main window |
 | `-v, --version` | Show version |
 | `-h, --help` | Show help |

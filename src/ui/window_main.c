@@ -32,6 +32,12 @@
 #include "../capture/platform.h"
 #include "../output/save.h"
 #include "../output/clipboard.h"
+#include "../output/upload.h"
+#include "../output/ocr.h"
+#include "pin_window.h"
+#include "history_panel.h"
+#include "tray.h"
+#include "../ipc/dbus_service.h"
 #include "../utils/config.h"
 #include "../utils/hotkey.h"
 #include "../utils/shortcut.h"
@@ -66,6 +72,7 @@ typedef struct {
     GtkWidget            *quality_label;
     GtkWidget            *statusbar;
     GtkWidget            *zoom_label;    /**< Shows "100%" in the header    */
+    GtkWidget            *btn_upload;
 
     SnapxConfig          *config;
     SnapxCaptureBackend  *backend;
@@ -118,6 +125,12 @@ typedef struct {
     GtkWidget *btn_fit;
 
     char last_save_path[512];  /**< Last successful save (for reveal in folder) */
+    int  upload_busy;
+
+    GtkWidget *history_panel;
+    int        crop_active;
+    gboolean   crop_dragging;
+    double     crop_x1, crop_y1, crop_x2, crop_y2;
 
     /** Cached XDG parent handle ("x11:0x…" or "wayland:…") for portal modals */
     char portal_parent[128];
@@ -133,6 +146,8 @@ static MainWindow g_win;
 static void invalidate_scaled(MainWindow *mw);
 static void redraw(GtkWidget *widget, cairo_t *cr, gpointer user_data);
 static void do_capture(MainWindow *mw, SnapxCaptureMode mode, int delay);
+static void do_upload_image(MainWindow *mw, SnapxImage *img);
+static void on_crop(MainWindow *mw);
 static void update_zoom_label(MainWindow *mw);
 
 /* ─── CSS loading ─────────────────────────────────────────────────────────── */
@@ -509,6 +524,25 @@ static void redraw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
             cairo_paint(cr);
         }
     }
+
+    if (mw->crop_active && (mw->crop_dragging ||
+        fabs(mw->crop_x2 - mw->crop_x1) > 1 ||
+        fabs(mw->crop_y2 - mw->crop_y1) > 1)) {
+        double scale, ox, oy;
+        compute_viewport(mw, cw, ch, &scale, &ox, &oy);
+        double x0 = mw->crop_x1 < mw->crop_x2 ? mw->crop_x1 : mw->crop_x2;
+        double y0 = mw->crop_y1 < mw->crop_y2 ? mw->crop_y1 : mw->crop_y2;
+        double rw = fabs(mw->crop_x2 - mw->crop_x1);
+        double rh = fabs(mw->crop_y2 - mw->crop_y1);
+        cairo_save(cr);
+        cairo_translate(cr, ox, oy);
+        cairo_scale(cr, scale, scale);
+        cairo_set_source_rgba(cr, 0.2, 0.6, 1.0, 0.9);
+        cairo_set_line_width(cr, 2.0 / scale);
+        cairo_rectangle(cr, x0, y0, rw, rh);
+        cairo_stroke(cr);
+        cairo_restore(cr);
+    }
 }
 
 /* ─── Portal parent window helper ─────────────────────────────────────────── */
@@ -871,6 +905,12 @@ static void after_capture(MainWindow *mw, SnapxImage *img, const char *ok_msg)
         if (dpy)
             gdk_display_beep(dpy);
     }
+    if (mw->config->upload_auto && snapx_upload_available()
+        && mw->config->upload_service != SNAPX_UPLOAD_NONE) {
+        SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+        do_upload_image(mw, flat ? flat : mw->current_image);
+        snapx_image_free(flat);
+    }
 }
 
 static void snapx_main_sync_wayland_prefer(MainWindow *mw)
@@ -940,7 +980,7 @@ static void region_capture_desktop_done(SnapxImage *full, gpointer data)
     int n_mon = snapx_get_monitors(mw->backend, monitors, 8);
 
     SnapxRegion region = {0};
-    int ok = snapx_overlay_select_region(NULL, full, monitors, n_mon, &mw->config->shortcuts, &region);
+    int ok = snapx_overlay_select_region(NULL, full, monitors, n_mon, &mw->config->shortcuts, mw->config, &region);
     if (!ok) {
         snapx_image_free(full);
         snapx_restore_window_state(mw);
@@ -1145,6 +1185,89 @@ static void snapx_main_refresh_shortcut_tooltips(MainWindow *mw)
 
 static void on_save(GtkButton *b, gpointer d);
 static void on_copy_clipboard(GtkButton *b, gpointer d);
+static void on_upload(GtkButton *b, gpointer d);
+
+static void upload_done_cb(int success, const char *url, const char *error, gpointer data)
+{
+    MainWindow *mw = data;
+    mw->upload_busy = 0;
+    if (mw->btn_upload)
+        gtk_widget_set_sensitive(mw->btn_upload, TRUE);
+    if (success && url) {
+        if (mw->config->upload_copy_url)
+            snapx_clipboard_copy_text(url);
+        char msg[384];
+        snprintf(msg, sizeof(msg), "Uploaded — %s", url);
+        set_status(mw, msg);
+    } else {
+        char msg[256];
+        snprintf(msg, sizeof(msg), "Upload failed: %s",
+                 error ? error : "unknown error");
+        set_status(mw, msg);
+    }
+}
+
+static void do_upload_image(MainWindow *mw, SnapxImage *img)
+{
+    if (!img || !snapx_upload_available()) {
+        set_status(mw, "Upload not available (install libcurl).");
+        return;
+    }
+    if (mw->config->upload_service == SNAPX_UPLOAD_NONE) {
+        set_status(mw, "Configure upload service in Settings.");
+        return;
+    }
+    if (mw->upload_busy) return;
+
+    SnapxOutputFormat fmt = mw->config->default_format;
+    SnapxEncodedImage enc;
+    if (snapx_image_encode(img, fmt, mw->config->jpeg_quality, &enc) != 0) {
+        set_status(mw, "Failed to encode image for upload.");
+        return;
+    }
+    mw->upload_busy = 1;
+    if (mw->btn_upload)
+        gtk_widget_set_sensitive(mw->btn_upload, FALSE);
+    snapx_upload_async(&enc, mw->config, upload_done_cb, mw);
+}
+
+static void on_upload(GtkButton *b, gpointer d)
+{
+    (void)b;
+    MainWindow *mw = (MainWindow *)d;
+    if (!mw->current_image) { set_status(mw, "Nothing to upload."); return; }
+    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+    do_upload_image(mw, flat ? flat : mw->current_image);
+    snapx_image_free(flat);
+}
+
+static void on_ocr(GtkButton *b, gpointer d)
+{
+    (void)b;
+    MainWindow *mw = (MainWindow *)d;
+    if (!mw->current_image) { set_status(mw, "Nothing to OCR."); return; }
+    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+    char text[SNAPX_OCR_MAX];
+    if (snapx_ocr_image(flat ? flat : mw->current_image, mw->config->ocr_lang,
+                        text, sizeof(text)) == 0) {
+        snapx_clipboard_copy_text(text);
+        set_status(mw, "Text copied from image.");
+    } else {
+        set_status(mw, text);
+    }
+    snapx_image_free(flat);
+}
+
+static void on_pin(GtkButton *b, gpointer d)
+{
+    (void)b;
+    MainWindow *mw = (MainWindow *)d;
+    if (!mw->current_image) return;
+    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+    snapx_pin_image(flat ? flat : mw->current_image);
+    snapx_image_free(flat);
+    set_status(mw, "Pinned to screen.");
+}
 
 static void on_copy_clipboard(GtkButton *b, gpointer d)
 {
@@ -1217,6 +1340,8 @@ static void on_save(GtkButton *b, gpointer d)
 
     if (ret == 0) {
         snprintf(mw->last_save_path, sizeof(mw->last_save_path), "%s", path);
+        if (mw->history_panel)
+            snapx_history_panel_refresh(mw->history_panel, mw->config);
         char msg[600];
         snprintf(msg, sizeof(msg), "Saved: %s", path);
         set_status(mw, msg);
@@ -1268,9 +1393,98 @@ static void on_settings(GtkButton *b, gpointer d)
     snapx_main_apply_config(mw, prev_save_dir);
     snapx_toolbar_apply_config(mw->config);
     snapx_main_refresh_shortcut_tooltips(mw);
+    if (mw->history_panel)
+        snapx_history_panel_refresh(mw->history_panel, mw->config);
 }
 
 static void on_fit(GtkButton *b, gpointer d) { (void)b; set_fit((MainWindow *)d); }
+
+static void on_history_select(const char *path, gpointer userdata)
+{
+    MainWindow *mw = userdata;
+    SnapxImage *img = snapx_image_load_file(path);
+    if (!img) {
+        set_status(mw, "Could not load image.");
+        return;
+    }
+    snapx_window_main_set_image(img);
+    set_status(mw, "Loaded from history.");
+}
+
+static void apply_crop_region(MainWindow *mw)
+{
+    if (!mw->current_image) return;
+    int x0 = (int)(mw->crop_x1 < mw->crop_x2 ? mw->crop_x1 : mw->crop_x2);
+    int y0 = (int)(mw->crop_y1 < mw->crop_y2 ? mw->crop_y1 : mw->crop_y2);
+    int x1 = (int)(mw->crop_x1 > mw->crop_x2 ? mw->crop_x1 : mw->crop_x2);
+    int y1 = (int)(mw->crop_y1 > mw->crop_y2 ? mw->crop_y1 : mw->crop_y2);
+    int w = x1 - x0, h = y1 - y0;
+    if (w < 4 || h < 4) {
+        set_status(mw, "Crop region too small.");
+        return;
+    }
+    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+    SnapxImage *src = flat ? flat : mw->current_image;
+    SnapxImage *cropped = snapx_image_crop(src, x0, y0, w, h);
+    snapx_image_free(flat);
+    if (!cropped) {
+        set_status(mw, "Crop failed.");
+        return;
+    }
+    after_capture(mw, cropped, "Image cropped.");
+}
+
+static void on_crop(MainWindow *mw)
+{
+    if (!mw->current_image) {
+        set_status(mw, "Nothing to crop.");
+        return;
+    }
+    mw->crop_active = !mw->crop_active;
+    mw->crop_dragging = FALSE;
+    snapx_toolbar_set_input_enabled(!mw->crop_active);
+    set_status(mw, mw->crop_active
+               ? "Drag to select crop area (Esc to cancel)"
+               : "Crop cancelled.");
+}
+
+static gboolean on_close_request(GtkWindow *win, gpointer data)
+{
+    MainWindow *mw = data;
+    if (mw->config && mw->config->close_to_tray) {
+        gtk_widget_set_visible(GTK_WIDGET(win), FALSE);
+        snapx_tray_set_visible(1);
+        return TRUE;
+    }
+    (void)win;
+    return FALSE;
+}
+
+#ifdef SNAPX_USE_GTK4
+static void crop_press(GtkGestureClick *g, int n, double x, double y, gpointer d)
+{
+    (void)n;
+    MainWindow *mw = d;
+    if (!mw->crop_active) return;
+    snapx_main_widget_to_image(x, y, &mw->crop_x1, &mw->crop_y1);
+    mw->crop_x2 = mw->crop_x1;
+    mw->crop_y2 = mw->crop_y1;
+    mw->crop_dragging = TRUE;
+    gtk_widget_queue_draw(mw->drawing_area);
+}
+
+static void crop_release(GtkGestureClick *g, int n, double x, double y, gpointer d)
+{
+    (void)g; (void)n;
+    MainWindow *mw = d;
+    if (!mw->crop_active || !mw->crop_dragging) return;
+    snapx_main_widget_to_image(x, y, &mw->crop_x2, &mw->crop_y2);
+    mw->crop_dragging = FALSE;
+    mw->crop_active = FALSE;
+    snapx_toolbar_set_input_enabled(TRUE);
+    apply_crop_region(mw);
+}
+#endif
 
 static void on_format_changed(GObject *obj, GParamSpec *pspec, gpointer data)
 {
@@ -1321,6 +1535,25 @@ static gboolean on_key_pressed(GtkEventControllerKey *ctrl,
     }
     if (snapx_shortcut_match(sc->copy, keyval, state)) {
         on_copy_clipboard(NULL, mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->upload, keyval, state)) {
+        on_upload(NULL, mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->ocr, keyval, state)) {
+        on_ocr(NULL, mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->pin, keyval, state)) {
+        on_pin(NULL, mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->crop, keyval, state)) {
+        on_crop(mw); return TRUE;
+    }
+    if (mw->crop_active && keyval == GDK_KEY_Escape) {
+        mw->crop_active = FALSE;
+        snapx_toolbar_set_input_enabled(TRUE);
+        set_status(mw, "Crop cancelled.");
+        gtk_widget_queue_draw(mw->drawing_area);
+        return TRUE;
     }
     if (mw->canvas && snapx_shortcut_match(sc->undo, keyval, state)) {
         snapx_canvas_undo(mw->canvas);
@@ -1374,6 +1607,18 @@ static gboolean on_key_press_gtk3(GtkWidget *w, GdkEventKey *ev, gpointer data)
     }
     if (snapx_shortcut_match(sc->copy, ev->keyval, ev->state)) {
         on_copy_clipboard(NULL, mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->upload, ev->keyval, ev->state)) {
+        on_upload(NULL, mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->ocr, ev->keyval, ev->state)) {
+        on_ocr(NULL, mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->pin, ev->keyval, ev->state)) {
+        on_pin(NULL, mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->crop, ev->keyval, ev->state)) {
+        on_crop(mw); return TRUE;
     }
     if (mw->canvas && snapx_shortcut_match(sc->undo, ev->keyval, ev->state)) {
         snapx_canvas_undo(mw->canvas); mw->annot_surface_valid = FALSE;
@@ -1552,7 +1797,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_box_pack_start(GTK_BOX(vbox), mw->toolbar_box, FALSE, FALSE, 0);
 #endif
 
-    /* ── Drawing area ────────────────────────────────────────────────────── */
+    /* ── Drawing area (with optional history sidebar) ──────────────────── */
     GtkWidget *scroll;
 #ifdef SNAPX_USE_GTK4
     scroll = gtk_scrolled_window_new();
@@ -1561,13 +1806,22 @@ void snapx_window_main_create(GtkApplication      *app,
 #endif
     gtk_widget_set_vexpand(scroll, TRUE);
     gtk_widget_set_hexpand(scroll, TRUE);
-    /* Disable auto-scrollbars — we manage panning ourselves */
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
                                     GTK_POLICY_NEVER, GTK_POLICY_NEVER);
+
+    GtkWidget *paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    mw->history_panel = snapx_history_panel_new(config, on_history_select, mw);
+    gtk_widget_set_size_request(mw->history_panel, 180, -1);
 #ifdef SNAPX_USE_GTK4
-    gtk_box_append(GTK_BOX(vbox), scroll);
+    gtk_paned_set_start_child(GTK_PANED(paned), mw->history_panel);
+    gtk_paned_set_end_child(GTK_PANED(paned), scroll);
+    gtk_paned_set_resize_end_child(GTK_PANED(paned), TRUE);
+    gtk_paned_set_shrink_start_child(GTK_PANED(paned), TRUE);
+    gtk_box_append(GTK_BOX(vbox), paned);
 #else
-    gtk_box_pack_start(GTK_BOX(vbox), scroll, TRUE, TRUE, 0);
+    gtk_paned_pack1(GTK_PANED(paned), mw->history_panel, FALSE, FALSE);
+    gtk_paned_pack2(GTK_PANED(paned), scroll, TRUE, TRUE);
+    gtk_box_pack_start(GTK_BOX(vbox), paned, TRUE, TRUE, 0);
 #endif
 
 #ifdef SNAPX_USE_GTK4
@@ -1607,6 +1861,11 @@ void snapx_window_main_create(GtkApplication      *app,
     g_signal_connect(drag, "drag-update", G_CALLBACK(on_pan_update), mw);
     g_signal_connect(drag, "drag-end",    G_CALLBACK(on_pan_end),    mw);
     gtk_widget_add_controller(mw->drawing_area, GTK_EVENT_CONTROLLER(drag));
+
+    GtkGesture *crop_click = gtk_gesture_click_new();
+    g_signal_connect(crop_click, "pressed",  G_CALLBACK(crop_press),   mw);
+    g_signal_connect(crop_click, "released", G_CALLBACK(crop_release), mw);
+    gtk_widget_add_controller(mw->drawing_area, GTK_EVENT_CONTROLLER(crop_click));
 #endif
 
     /* ── Bottom action bar ───────────────────────────────────────────────── */
@@ -1656,14 +1915,20 @@ void snapx_window_main_create(GtkApplication      *app,
 
     /* Copy / Save / Open folder */
     GtkWidget *btn_copy = gtk_button_new_with_label("Copy");
+    GtkWidget *btn_upload = gtk_button_new_with_label("Upload");
     GtkWidget *btn_save = gtk_button_new_with_label("Save");
     GtkWidget *btn_folder = gtk_button_new_with_label("Open folder");
+    mw->btn_upload = btn_upload;
+    if (!snapx_upload_available())
+        gtk_widget_set_visible(btn_upload, FALSE);
     gtk_widget_add_css_class(btn_save, "suggested-action");
     gtk_widget_set_tooltip_text(btn_copy, "Copy to clipboard  (Ctrl+C)");
+    gtk_widget_set_tooltip_text(btn_upload, "Upload and copy link  (Ctrl+U)");
     gtk_widget_set_tooltip_text(btn_save, "Save to file  (Ctrl+S)");
     gtk_widget_set_tooltip_text(btn_folder,
         "Open screenshots folder in file manager (last save location if available)");
     g_signal_connect(btn_copy,   "clicked", G_CALLBACK(on_copy_clipboard), mw);
+    g_signal_connect(btn_upload, "clicked", G_CALLBACK(on_upload),         mw);
     g_signal_connect(btn_save,   "clicked", G_CALLBACK(on_save),           mw);
     g_signal_connect(btn_folder, "clicked", G_CALLBACK(on_open_folder),    mw);
 
@@ -1674,6 +1939,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_action_bar_pack_start(GTK_ACTION_BAR(action_bar), mw->quality_scale);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_save);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_folder);
+    gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_upload);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_copy);
 #else
     gtk_box_pack_start(GTK_BOX(action_bar), fmt_label,         FALSE, FALSE, 4);
@@ -1682,6 +1948,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_box_pack_start(GTK_BOX(action_bar), mw->quality_scale, FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_save,          FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_folder,        FALSE, FALSE, 4);
+    gtk_box_pack_end  (GTK_BOX(action_bar), btn_upload,        FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_copy,          FALSE, FALSE, 4);
 #endif
 
@@ -1709,10 +1976,19 @@ void snapx_window_main_create(GtkApplication      *app,
 #endif
 
     g_signal_connect(win, "destroy", G_CALLBACK(on_win_destroy), mw);
+#ifdef SNAPX_USE_GTK4
+    g_signal_connect(win, "close-request", G_CALLBACK(on_close_request), mw);
+#endif
 
     snapx_main_refresh_shortcut_tooltips(mw);
 
-    gtk_widget_set_visible(win, TRUE);
+    snapx_tray_init(mw, app, config);
+    snapx_dbus_service_start();
+
+    if (config->start_in_tray)
+        gtk_widget_set_visible(win, FALSE);
+    else
+        gtk_widget_set_visible(win, TRUE);
     g_idle_add(portal_parent_on_mapped, mw);
     set_status(mw, "Ready — click Screen, Region or Window to capture.");
 }
@@ -1732,4 +2008,50 @@ void snapx_window_main_set_image(SnapxImage *img)
     snapx_toolbar_set_canvas(mw->canvas, mw->drawing_area);
     set_fit(mw);
     if (mw->drawing_area) gtk_widget_queue_draw(mw->drawing_area);
+}
+
+void snapx_window_main_show(void)
+{
+    if (g_win.win)
+        gtk_window_present(GTK_WINDOW(g_win.win));
+}
+
+void snapx_window_main_capture_region(void)
+{
+    trigger_capture_mode(&g_win, SNAPX_CAPTURE_REGION);
+}
+
+GtkApplication *snapx_window_main_get_app(void)
+{
+    if (!g_win.win) return NULL;
+    return gtk_window_get_application(GTK_WINDOW(g_win.win));
+}
+
+const char *snapx_window_main_get_last_path(void)
+{
+    return g_win.last_save_path[0] ? g_win.last_save_path : "";
+}
+
+int snapx_window_main_save_to(const char *path)
+{
+    if (!path || !path[0] || !g_win.current_image) return -1;
+    SnapxOutputFormat fmt = SNAPX_FORMAT_PNG;
+    if (g_win.format_combo) {
+#ifdef SNAPX_USE_GTK4
+        fmt = (SnapxOutputFormat)gtk_drop_down_get_selected(
+            GTK_DROP_DOWN(g_win.format_combo));
+#else
+        fmt = (SnapxOutputFormat)gtk_combo_box_get_active(
+            GTK_COMBO_BOX(g_win.format_combo));
+#endif
+    }
+    SnapxImage *flat = snapx_canvas_flatten(g_win.canvas, g_win.current_image);
+    int quality = g_win.quality_scale
+        ? (int)gtk_range_get_value(GTK_RANGE(g_win.quality_scale))
+        : g_win.config->jpeg_quality;
+    int ret = snapx_image_save(flat ? flat : g_win.current_image, path, fmt, quality);
+    snapx_image_free(flat);
+    if (ret == 0)
+        snprintf(g_win.last_save_path, sizeof(g_win.last_save_path), "%s", path);
+    return ret;
 }

@@ -252,6 +252,11 @@ typedef struct {
     GtkWidget   *quality_spin;
     GtkWidget   *clipboard_sw;
     GtkWidget   *sound_sw;
+    GtkWidget   *upload_svc_dd;
+    GtkWidget   *imgur_entry;
+    GtkWidget   *custom_url_entry;
+    GtkWidget   *copy_url_sw;
+    GtkWidget   *auto_upload_sw;
     GtkWidget   *tool_dd;
     GtkWidget   *color_btn;
     GtkWidget   *sc_global;
@@ -268,6 +273,16 @@ typedef struct {
     GtkWidget   *sc_zoom_out;
     GtkWidget   *sc_region_ok;
     GtkWidget   *sc_region_cancel;
+    GtkWidget   *sc_upload;
+    GtkWidget   *sc_ocr;
+    GtkWidget   *sc_pin;
+    GtkWidget   *sc_crop;
+    GtkWidget   *magnifier_sw;
+    GtkWidget   *magnifier_zoom_spin;
+    GtkWidget   *window_snap_sw;
+    GtkWidget   *close_to_tray_sw;
+    GtkWidget   *start_in_tray_sw;
+    GtkWidget   *ocr_lang_entry;
     GtkWidget   *err_label;
     GMainLoop   *loop;
 } DlgWidgets;
@@ -288,6 +303,10 @@ static void apply_shortcuts_to_entries(DlgWidgets *dw, const SnapxShortcuts *sc)
     gtk_editable_set_text(GTK_EDITABLE(dw->sc_zoom_out), sc->zoom_out);
     gtk_editable_set_text(GTK_EDITABLE(dw->sc_region_ok), sc->region_confirm);
     gtk_editable_set_text(GTK_EDITABLE(dw->sc_region_cancel), sc->region_cancel);
+    gtk_editable_set_text(GTK_EDITABLE(dw->sc_upload), sc->upload);
+    gtk_editable_set_text(GTK_EDITABLE(dw->sc_ocr), sc->ocr);
+    gtk_editable_set_text(GTK_EDITABLE(dw->sc_pin), sc->pin);
+    gtk_editable_set_text(GTK_EDITABLE(dw->sc_crop), sc->crop);
 }
 
 static void on_reset_shortcuts(GtkButton *btn, gpointer user_data)
@@ -361,6 +380,14 @@ static void read_shortcuts_from_ui(DlgWidgets *dw, SnapxShortcuts *sc)
              gtk_editable_get_text(GTK_EDITABLE(dw->sc_region_ok)));
     snprintf(sc->region_cancel, sizeof(sc->region_cancel), "%s",
              gtk_editable_get_text(GTK_EDITABLE(dw->sc_region_cancel)));
+    snprintf(sc->upload, sizeof(sc->upload), "%s",
+             gtk_editable_get_text(GTK_EDITABLE(dw->sc_upload)));
+    snprintf(sc->ocr, sizeof(sc->ocr), "%s",
+             gtk_editable_get_text(GTK_EDITABLE(dw->sc_ocr)));
+    snprintf(sc->pin, sizeof(sc->pin), "%s",
+             gtk_editable_get_text(GTK_EDITABLE(dw->sc_pin)));
+    snprintf(sc->crop, sizeof(sc->crop), "%s",
+             gtk_editable_get_text(GTK_EDITABLE(dw->sc_crop)));
 }
 
 static void on_ok_clicked(GtkButton *btn, gpointer user_data)
@@ -386,8 +413,25 @@ static void on_ok_clicked(GtkButton *btn, gpointer user_data)
         GTK_SPIN_BUTTON(dw->quality_spin));
     c->auto_clipboard = gtk_switch_get_active(GTK_SWITCH(dw->clipboard_sw));
     c->play_sound     = gtk_switch_get_active(GTK_SWITCH(dw->sound_sw));
+    c->upload_service = (SnapxUploadService)
+        gtk_drop_down_get_selected(GTK_DROP_DOWN(dw->upload_svc_dd));
+    snprintf(c->upload_imgur_client_id, sizeof(c->upload_imgur_client_id), "%s",
+             gtk_editable_get_text(GTK_EDITABLE(dw->imgur_entry)));
+    snprintf(c->upload_custom_url, sizeof(c->upload_custom_url), "%s",
+             gtk_editable_get_text(GTK_EDITABLE(dw->custom_url_entry)));
+    c->upload_copy_url = gtk_switch_get_active(GTK_SWITCH(dw->copy_url_sw));
+    c->upload_auto     = gtk_switch_get_active(GTK_SWITCH(dw->auto_upload_sw));
     c->default_tool   = (SnapxAnnotationTool)
         gtk_drop_down_get_selected(GTK_DROP_DOWN(dw->tool_dd));
+
+    c->magnifier_enabled   = gtk_switch_get_active(GTK_SWITCH(dw->magnifier_sw));
+    c->magnifier_zoom      = (int)gtk_spin_button_get_value(
+        GTK_SPIN_BUTTON(dw->magnifier_zoom_spin));
+    c->window_snap_enabled = gtk_switch_get_active(GTK_SWITCH(dw->window_snap_sw));
+    c->close_to_tray       = gtk_switch_get_active(GTK_SWITCH(dw->close_to_tray_sw));
+    c->start_in_tray       = gtk_switch_get_active(GTK_SWITCH(dw->start_in_tray_sw));
+    snprintf(c->ocr_lang, sizeof(c->ocr_lang), "%s",
+             gtk_editable_get_text(GTK_EDITABLE(dw->ocr_lang_entry)));
 
     GdkRGBA rgba = {
         c->default_color_r, c->default_color_g,
@@ -596,15 +640,42 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     gtk_box_append(GTK_BOX(cap_page), gtk_widget_get_parent(ann_rows));
 
     const char *tools[] = { "Rectangle", "Arrow", "Pen", "Text",
-                             "Blur", "Highlight", NULL };
+                             "Blur", "Highlight", "Callout", "Redact", NULL };
     GtkWidget *tool_dd = gtk_drop_down_new_from_strings(tools);
-    if ((unsigned)config->default_tool < 6u)
+    if ((unsigned)config->default_tool < 8u)
         gtk_drop_down_set_selected(GTK_DROP_DOWN(tool_dd),
                                    (guint)config->default_tool);
     pref_row_add_compact(ann_rows, "Default tool:", tool_dd);
 
     GtkWidget *color_btn = new_color_button(config);
     pref_row_add_compact(ann_rows, "Default color:", color_btn);
+
+    GtkWidget *overlay_rows = new_pref_group("Region overlay");
+    gtk_box_append(GTK_BOX(cap_page), gtk_widget_get_parent(overlay_rows));
+
+    GtkWidget *magnifier_sw = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(magnifier_sw), config->magnifier_enabled);
+    pref_row_add_switch(overlay_rows, "Magnifier (hold Space)", magnifier_sw);
+
+    GtkWidget *magnifier_zoom_spin = gtk_spin_button_new_with_range(2, 16, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(magnifier_zoom_spin),
+                               (double)config->magnifier_zoom);
+    pref_row_add_compact(overlay_rows, "Magnifier zoom:", magnifier_zoom_spin);
+
+    GtkWidget *window_snap_sw = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(window_snap_sw), config->window_snap_enabled);
+    pref_row_add_switch(overlay_rows, "Snap to window", window_snap_sw);
+
+    GtkWidget *tray_rows = new_pref_group("Background / tray");
+    gtk_box_append(GTK_BOX(cap_page), gtk_widget_get_parent(tray_rows));
+
+    GtkWidget *close_to_tray_sw = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(close_to_tray_sw), config->close_to_tray);
+    pref_row_add_switch(tray_rows, "Close to tray (hide window)", close_to_tray_sw);
+
+    GtkWidget *start_in_tray_sw = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(start_in_tray_sw), config->start_in_tray);
+    pref_row_add_switch(tray_rows, "Start hidden in background", start_in_tray_sw);
 
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), wrap_tab_scroll(cap_page),
                               gtk_label_new("Capture"));
@@ -635,6 +706,40 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     GtkWidget *sound_sw = gtk_switch_new();
     gtk_switch_set_active(GTK_SWITCH(sound_sw), config->play_sound);
     pref_row_add_switch(out_opt_rows, "Play sound on capture", sound_sw);
+
+    GtkWidget *ocr_rows = new_pref_group("OCR");
+    gtk_box_append(GTK_BOX(out_page), gtk_widget_get_parent(ocr_rows));
+
+    GtkWidget *ocr_lang_entry = gtk_entry_new();
+    gtk_editable_set_text(GTK_EDITABLE(ocr_lang_entry), config->ocr_lang);
+    pref_row_add_compact(ocr_rows, "Tesseract language:", ocr_lang_entry);
+    gtk_box_append(GTK_BOX(out_page), new_help_label(
+        "OCR requires Tesseract at build time (e.g. eng, deu)."));
+
+    GtkWidget *upload_rows = new_pref_group("Upload");
+    gtk_box_append(GTK_BOX(out_page), gtk_widget_get_parent(upload_rows));
+
+    const char *upload_svcs[] = { "None", "Imgur", "Custom URL", NULL };
+    GtkWidget *upload_svc_dd = gtk_drop_down_new_from_strings(upload_svcs);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(upload_svc_dd),
+                                (guint)config->upload_service);
+    pref_row_add_compact(upload_rows, "Service:", upload_svc_dd);
+
+    GtkWidget *imgur_entry = gtk_entry_new();
+    gtk_editable_set_text(GTK_EDITABLE(imgur_entry), config->upload_imgur_client_id);
+    pref_row_add_compact(upload_rows, "Imgur client ID:", imgur_entry);
+
+    GtkWidget *custom_url_entry = gtk_entry_new();
+    gtk_editable_set_text(GTK_EDITABLE(custom_url_entry), config->upload_custom_url);
+    pref_row_add_compact(upload_rows, "Custom URL:", custom_url_entry);
+
+    GtkWidget *copy_url_sw = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(copy_url_sw), config->upload_copy_url);
+    pref_row_add_switch(upload_rows, "Copy URL after upload", copy_url_sw);
+
+    GtkWidget *auto_upload_sw = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(auto_upload_sw), config->upload_auto);
+    pref_row_add_switch(upload_rows, "Auto upload after capture", auto_upload_sw);
 
     gtk_box_append(GTK_BOX(out_page), new_help_label(
         "Sound uses the system beep after a successful capture."));
@@ -695,6 +800,14 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
         grid_ed, 6, "Zoom in", new_shortcut_entry(sc->zoom_in));
     GtkWidget *sc_zoom_out = shortcuts_grid_add(
         grid_ed, 7, "Zoom out", new_shortcut_entry(sc->zoom_out));
+    GtkWidget *sc_upload = shortcuts_grid_add(
+        grid_ed, 8, "Upload", new_shortcut_entry(sc->upload));
+    GtkWidget *sc_ocr = shortcuts_grid_add(
+        grid_ed, 9, "Copy text (OCR)", new_shortcut_entry(sc->ocr));
+    GtkWidget *sc_pin = shortcuts_grid_add(
+        grid_ed, 10, "Pin to screen", new_shortcut_entry(sc->pin));
+    GtkWidget *sc_crop = shortcuts_grid_add(
+        grid_ed, 11, "Crop", new_shortcut_entry(sc->crop));
     shortcuts_section_add(sc_page, "Editor", grid_ed, FALSE);
 
     GtkWidget *grid_ov = new_shortcuts_grid();
@@ -722,6 +835,11 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     dw->quality_spin     = quality_spin;
     dw->clipboard_sw     = clipboard_sw;
     dw->sound_sw         = sound_sw;
+    dw->upload_svc_dd    = upload_svc_dd;
+    dw->imgur_entry      = imgur_entry;
+    dw->custom_url_entry = custom_url_entry;
+    dw->copy_url_sw      = copy_url_sw;
+    dw->auto_upload_sw   = auto_upload_sw;
     dw->tool_dd          = tool_dd;
     dw->color_btn        = color_btn;
     dw->sc_global        = sc_global;
@@ -738,6 +856,16 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     dw->sc_zoom_out      = sc_zoom_out;
     dw->sc_region_ok     = sc_region_ok;
     dw->sc_region_cancel = sc_region_cancel;
+    dw->sc_upload        = sc_upload;
+    dw->sc_ocr           = sc_ocr;
+    dw->sc_pin           = sc_pin;
+    dw->sc_crop          = sc_crop;
+    dw->magnifier_sw     = magnifier_sw;
+    dw->magnifier_zoom_spin = magnifier_zoom_spin;
+    dw->window_snap_sw   = window_snap_sw;
+    dw->close_to_tray_sw = close_to_tray_sw;
+    dw->start_in_tray_sw = start_in_tray_sw;
+    dw->ocr_lang_entry   = ocr_lang_entry;
     dw->err_label        = err_label;
     dw->loop             = loop;
 

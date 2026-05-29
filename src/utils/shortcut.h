@@ -25,6 +25,10 @@ typedef struct {
     char zoom_out[SNAPX_SHORTCUT_MAX];
     char region_confirm[SNAPX_SHORTCUT_MAX];
     char region_cancel[SNAPX_SHORTCUT_MAX];
+    char upload[SNAPX_SHORTCUT_MAX];
+    char ocr[SNAPX_SHORTCUT_MAX];
+    char pin[SNAPX_SHORTCUT_MAX];
+    char crop[SNAPX_SHORTCUT_MAX];
 } SnapxShortcuts;
 
 void snapx_shortcuts_set_defaults(SnapxShortcuts *sc);

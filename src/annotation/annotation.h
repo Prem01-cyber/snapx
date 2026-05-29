@@ -25,6 +25,8 @@ typedef enum {
     SNAPX_TOOL_TEXT      = 3,
     SNAPX_TOOL_BLUR      = 4,
     SNAPX_TOOL_HIGHLIGHT = 5,
+    SNAPX_TOOL_CALLOUT   = 6,
+    SNAPX_TOOL_REDACT    = 7,
 } SnapxAnnotationTool;
 #endif
 
@@ -53,8 +55,9 @@ typedef struct SnapxAnnotation {
     /* Shape data — union-like usage depending on tool */
     SnapxRect           rect;         /**< RECT, BLUR, HIGHLIGHT           */
     SnapxStrokePoints   points;       /**< PEN                             */
-    char                text[256];    /**< TEXT                            */
-    double              font_size;    /**< TEXT                            */
+    char                text[256];    /**< TEXT / CALLOUT number as string   */
+    double              font_size;    /**< TEXT / CALLOUT                    */
+    int                 callout_num;  /**< CALLOUT step number               */
 
     struct SnapxAnnotation *next;     /**< Linked list (undo stack node)   */
 } SnapxAnnotation;

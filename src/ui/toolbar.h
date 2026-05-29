@@ -70,4 +70,7 @@ void snapx_toolbar_annot_clear_dirty(void);
  */
 gboolean snapx_toolbar_in_stroke(void);
 
+/** Disable annotation input while crop mode is active. */
+void snapx_toolbar_set_input_enabled(gboolean enabled);
+
 #endif /* SNAPX_TOOLBAR_H */

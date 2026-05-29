@@ -164,6 +164,44 @@ void snapx_draw_annotation(cairo_t *cr, const SnapxAnnotation *ann)
             cairo_fill(cr);
             break;
         }
+
+        case SNAPX_TOOL_REDACT: {
+            cairo_set_source_rgb(cr, 0, 0, 0);
+            double x = ann->rect.x1, y = ann->rect.y1;
+            double w = ann->rect.x2 - ann->rect.x1;
+            double h = ann->rect.y2 - ann->rect.y1;
+            cairo_rectangle(cr, x, y, w, h);
+            cairo_fill(cr);
+            break;
+        }
+
+        case SNAPX_TOOL_CALLOUT: {
+            double cx = ann->rect.x1, cy = ann->rect.y1;
+            double r = 14.0;
+            cairo_arc(cr, cx, cy, r, 0, 2 * G_PI);
+            cairo_fill_preserve(cr);
+            cairo_stroke(cr);
+            char num[16];
+            snprintf(num, sizeof(num), "%d",
+                     ann->callout_num > 0 ? ann->callout_num : 1);
+            cairo_set_source_rgb(cr, 1, 1, 1);
+            cairo_select_font_face(cr, "Sans",
+                                   CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+            cairo_set_font_size(cr, 14);
+            cairo_text_extents_t te;
+            cairo_text_extents(cr, num, &te);
+            cairo_move_to(cr, cx - te.width / 2 - te.x_bearing,
+                          cy - te.height / 2 - te.y_bearing);
+            cairo_show_text(cr, num);
+            if (fabs(ann->rect.x2 - ann->rect.x1) > 4 || fabs(ann->rect.y2 - ann->rect.y1) > 4) {
+                gdk_cairo_set_source_rgba(cr, &ann->color);
+                cairo_move_to(cr, cx, cy);
+                cairo_line_to(cr, ann->rect.x2, ann->rect.y2);
+                cairo_stroke(cr);
+                draw_arrowhead(cr, cx, cy, ann->rect.x2, ann->rect.y2, 10);
+            }
+            break;
+        }
     }
 
     cairo_restore(cr);

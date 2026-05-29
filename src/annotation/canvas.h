@@ -48,6 +48,10 @@ void snapx_canvas_stroke_update(SnapxAnnotationCanvas *canvas, double x, double 
  */
 void snapx_canvas_stroke_end(SnapxAnnotationCanvas *canvas, double x, double y);
 
+/** Commit pending TEXT annotation with @p text (popover entry). */
+void snapx_canvas_stroke_end_text(SnapxAnnotationCanvas *canvas,
+                                  double x, double y, const char *text);
+
 /**
  * @brief Undo the last committed annotation.
  */

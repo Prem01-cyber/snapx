@@ -17,4 +17,7 @@
  */
 void snapx_clipboard_copy_image(const SnapxImage *img);
 
+/** Copy plain text (e.g. upload URL) to the system clipboard. */
+void snapx_clipboard_copy_text(const char *text);
+
 #endif /* SNAPX_CLIPBOARD_H */

@@ -171,8 +171,35 @@ jobs:
           name: fedora-rpm
           path: packaging/linux/output/*.rpm
 
+  build-flatpak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flatpak builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists flathub \
+            https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y flathub org.gnome.Platform//48 org.gnome.Sdk//48
+
+      - name: Build Flatpak bundle
+        run: |
+          mkdir -p packaging/flatpak/output
+          flatpak-builder --force-clean --repo=packaging/flatpak/repo \
+            packaging/flatpak/build packaging/flatpak/io.github.snapx.yml
+          flatpak build-bundle packaging/flatpak/repo \
+            packaging/flatpak/output/io.github.snapx.flatpak io.github.snapx
+
+      - name: Upload Flatpak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: packaging/flatpak/output/*.flatpak
+
   release:
-    needs: [build-linux, build-windows, build-macos, build-fedora-rpm]
+    needs: [build-linux, build-windows, build-macos, build-fedora-rpm, build-flatpak]
     runs-on: ubuntu-latest
     if: >-
       always() && !cancelled() &&
@@ -202,5 +229,6 @@ jobs:
             artifacts/**/*.rpm
             artifacts/**/*.exe
             artifacts/**/*.dmg
+            artifacts/**/*.flatpak
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

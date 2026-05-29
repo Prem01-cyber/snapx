@@ -44,4 +44,11 @@ void snapx_main_schedule_redraw(void);
  */
 void snapx_main_widget_to_image(double wx, double wy, double *ix, double *iy);
 
+/** Tray / D-Bus: trigger capture without including window internals. */
+void snapx_window_main_capture_region(void);
+void snapx_window_main_show(void);
+GtkApplication *snapx_window_main_get_app(void);
+const char *snapx_window_main_get_last_path(void);
+int snapx_window_main_save_to(const char *path);
+
 #endif /* SNAPX_WINDOW_MAIN_H */

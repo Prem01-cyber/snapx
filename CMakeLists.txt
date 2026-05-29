@@ -144,6 +144,20 @@ if(WEBP_FOUND)
     add_compile_definitions(SNAPX_HAVE_WEBP)
 endif()
 
+pkg_check_modules(CURL libcurl)
+if(CURL_FOUND)
+    add_compile_definitions(SNAPX_HAVE_UPLOAD)
+    message(STATUS "libcurl found — upload support enabled")
+else()
+    message(STATUS "libcurl not found — upload support disabled")
+endif()
+
+pkg_check_modules(TESSERACT tesseract lept)
+if(TESSERACT_FOUND)
+    add_compile_definitions(SNAPX_HAVE_TESSERACT)
+    message(STATUS "Tesseract found — OCR support enabled")
+endif()
+
 # ─── Platform-specific libraries ─────────────────────────────────────────────
 if(PLATFORM_LINUX)
     pkg_check_modules(X11    x11)
@@ -195,6 +209,7 @@ set(SOURCES
     src/capture/capture.c
     src/output/save.c
     src/output/clipboard.c
+    src/output/upload.c
     src/utils/config.c
     src/utils/pattern.c
     src/utils/shortcut.c
@@ -212,6 +227,11 @@ if(NOT SNAPX_HEADLESS_ONLY)
         src/ui/overlay.c
         src/ui/toolbar.c
         src/ui/settings_dialog.c
+        src/ui/tray.c
+        src/ui/pin_window.c
+        src/ui/history_panel.c
+        src/output/ocr.c
+        src/ipc/dbus_service.c
         src/annotation/draw.c
         src/annotation/canvas.c
     )
@@ -304,6 +324,18 @@ endif()
 
 if(WEBP_FOUND)
     target_link_libraries(snapx PRIVATE ${WEBP_LIBRARIES})
+endif()
+
+if(CURL_FOUND)
+    target_include_directories(snapx PRIVATE ${CURL_INCLUDE_DIRS})
+    target_link_libraries(snapx PRIVATE ${CURL_LIBRARIES})
+    target_compile_options(snapx PRIVATE ${CURL_CFLAGS_OTHER})
+endif()
+
+if(TESSERACT_FOUND)
+    target_include_directories(snapx PRIVATE ${TESSERACT_INCLUDE_DIRS})
+    target_link_libraries(snapx PRIVATE ${TESSERACT_LIBRARIES})
+    target_compile_options(snapx PRIVATE ${TESSERACT_CFLAGS_OTHER})
 endif()
 
 if(PLATFORM_LINUX)

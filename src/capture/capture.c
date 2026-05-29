@@ -338,3 +338,15 @@ void snapx_capture_wayland_save_token(SnapxCaptureBackend *backend)
     (void)backend;
 }
 #endif
+
+int snapx_list_windows(SnapxWindowInfo *out, int max_out)
+{
+    if (!out || max_out <= 0) return 0;
+#ifdef SNAPX_HAVE_X11
+    return snapx_x11_list_windows(out, max_out);
+#else
+    (void)out;
+    (void)max_out;
+    return 0;
+#endif
+}

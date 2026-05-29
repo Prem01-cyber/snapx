@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=snapx
+Comment=Screenshot tool (background)
+Exec=snapx --background
+Icon=io.github.snapx
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel

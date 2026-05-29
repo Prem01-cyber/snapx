@@ -95,6 +95,17 @@ static void apply_defaults(SnapxConfig *c)
     c->jpeg_quality    = 90;
     c->auto_clipboard  = 1;
     c->play_sound      = 1;
+    c->upload_service  = SNAPX_UPLOAD_NONE;
+    snprintf(c->upload_custom_field, sizeof(c->upload_custom_field), "file");
+    c->upload_custom_url_field[0] = '\0';
+    c->upload_copy_url = 1;
+    c->upload_auto     = 0;
+    c->magnifier_enabled = 1;
+    c->magnifier_zoom    = 8;
+    c->window_snap_enabled = 1;
+    c->close_to_tray   = 0;
+    c->start_in_tray   = 0;
+    snprintf(c->ocr_lang, sizeof(c->ocr_lang), "eng");
     c->default_tool    = SNAPX_TOOL_RECT;
     c->default_color_r = 1.0;
     c->default_color_g = 0.2;
@@ -160,6 +171,10 @@ static void parse_ini(FILE *fp, SnapxConfig *c)
             else if (strcmp(key, "zoom_out") == 0) snprintf(c->shortcuts.zoom_out, sizeof(c->shortcuts.zoom_out), "%s", val);
             else if (strcmp(key, "region_confirm") == 0) snprintf(c->shortcuts.region_confirm, sizeof(c->shortcuts.region_confirm), "%s", val);
             else if (strcmp(key, "region_cancel") == 0) snprintf(c->shortcuts.region_cancel, sizeof(c->shortcuts.region_cancel), "%s", val);
+            else if (strcmp(key, "upload") == 0) snprintf(c->shortcuts.upload, sizeof(c->shortcuts.upload), "%s", val);
+            else if (strcmp(key, "ocr") == 0) snprintf(c->shortcuts.ocr, sizeof(c->shortcuts.ocr), "%s", val);
+            else if (strcmp(key, "pin") == 0) snprintf(c->shortcuts.pin, sizeof(c->shortcuts.pin), "%s", val);
+            else if (strcmp(key, "crop") == 0) snprintf(c->shortcuts.crop, sizeof(c->shortcuts.crop), "%s", val);
             continue;
         }
 
@@ -175,6 +190,23 @@ static void parse_ini(FILE *fp, SnapxConfig *c)
         else if (strcmp(key, "jpeg_quality")       == 0) c->jpeg_quality    = atoi(val);
         else if (strcmp(key, "auto_clipboard")     == 0) c->auto_clipboard  = atoi(val);
         else if (strcmp(key, "play_sound")         == 0) c->play_sound      = atoi(val);
+        else if (strcmp(key, "upload_service")     == 0) {
+            if (strcmp(val, "imgur") == 0) c->upload_service = SNAPX_UPLOAD_IMGUR;
+            else if (strcmp(val, "custom") == 0) c->upload_service = SNAPX_UPLOAD_CUSTOM;
+            else c->upload_service = SNAPX_UPLOAD_NONE;
+        }
+        else if (strcmp(key, "imgur_client_id")    == 0) snprintf(c->upload_imgur_client_id, sizeof(c->upload_imgur_client_id), "%s", val);
+        else if (strcmp(key, "custom_url")         == 0) snprintf(c->upload_custom_url, sizeof(c->upload_custom_url), "%s", val);
+        else if (strcmp(key, "custom_field")       == 0) snprintf(c->upload_custom_field, sizeof(c->upload_custom_field), "%s", val);
+        else if (strcmp(key, "custom_url_field")   == 0) snprintf(c->upload_custom_url_field, sizeof(c->upload_custom_url_field), "%s", val);
+        else if (strcmp(key, "copy_url_after_upload") == 0) c->upload_copy_url = atoi(val);
+        else if (strcmp(key, "auto_upload")        == 0) c->upload_auto = atoi(val);
+        else if (strcmp(key, "magnifier_enabled")  == 0) c->magnifier_enabled = atoi(val);
+        else if (strcmp(key, "magnifier_zoom")     == 0) c->magnifier_zoom = atoi(val);
+        else if (strcmp(key, "window_snap_enabled")== 0) c->window_snap_enabled = atoi(val);
+        else if (strcmp(key, "close_to_tray")       == 0) c->close_to_tray = atoi(val);
+        else if (strcmp(key, "start_in_tray")       == 0) c->start_in_tray = atoi(val);
+        else if (strcmp(key, "ocr_lang")           == 0) snprintf(c->ocr_lang, sizeof(c->ocr_lang), "%s", val);
         else if (strcmp(key, "default_tool")       == 0) c->default_tool    = (SnapxAnnotationTool)atoi(val);
         else if (strcmp(key, "default_color_r")    == 0) c->default_color_r = atof(val);
         else if (strcmp(key, "default_color_g")    == 0) c->default_color_g = atof(val);
@@ -241,6 +273,25 @@ void snapx_config_save(const SnapxConfig *config)
     fprintf(fp, "jpeg_quality     = %d\n", config->jpeg_quality);
     fprintf(fp, "auto_clipboard   = %d\n", config->auto_clipboard);
     fprintf(fp, "play_sound       = %d\n", config->play_sound);
+    fprintf(fp, "\n[upload]\n");
+    fprintf(fp, "upload_service   = %s\n",
+            config->upload_service == SNAPX_UPLOAD_IMGUR ? "imgur" :
+            config->upload_service == SNAPX_UPLOAD_CUSTOM ? "custom" : "none");
+    fprintf(fp, "imgur_client_id  = %s\n", config->upload_imgur_client_id);
+    fprintf(fp, "custom_url       = %s\n", config->upload_custom_url);
+    fprintf(fp, "custom_field     = %s\n", config->upload_custom_field);
+    fprintf(fp, "custom_url_field = %s\n", config->upload_custom_url_field);
+    fprintf(fp, "copy_url_after_upload = %d\n", config->upload_copy_url);
+    fprintf(fp, "auto_upload      = %d\n", config->upload_auto);
+    fprintf(fp, "\n[overlay]\n");
+    fprintf(fp, "magnifier_enabled = %d\n", config->magnifier_enabled);
+    fprintf(fp, "magnifier_zoom    = %d\n", config->magnifier_zoom);
+    fprintf(fp, "window_snap_enabled = %d\n", config->window_snap_enabled);
+    fprintf(fp, "\n[tray]\n");
+    fprintf(fp, "close_to_tray    = %d\n", config->close_to_tray);
+    fprintf(fp, "start_in_tray    = %d\n", config->start_in_tray);
+    fprintf(fp, "\n[ocr]\n");
+    fprintf(fp, "ocr_lang         = %s\n", config->ocr_lang);
     fprintf(fp, "\n[annotation]\n");
     fprintf(fp, "default_tool     = %d\n", (int)config->default_tool);
     fprintf(fp, "default_color_r  = %.4f\n", config->default_color_r);
@@ -262,6 +313,10 @@ void snapx_config_save(const SnapxConfig *config)
     fprintf(fp, "zoom_out         = %s\n", config->shortcuts.zoom_out);
     fprintf(fp, "region_confirm   = %s\n", config->shortcuts.region_confirm);
     fprintf(fp, "region_cancel    = %s\n", config->shortcuts.region_cancel);
+    fprintf(fp, "upload           = %s\n", config->shortcuts.upload);
+    fprintf(fp, "ocr              = %s\n", config->shortcuts.ocr);
+    fprintf(fp, "pin              = %s\n", config->shortcuts.pin);
+    fprintf(fp, "crop             = %s\n", config->shortcuts.crop);
     fprintf(fp, "\n[window]\n");
     fprintf(fp, "window_x         = %d\n", config->window_x);
     fprintf(fp, "window_y         = %d\n", config->window_y);

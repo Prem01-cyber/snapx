@@ -35,6 +35,8 @@ struct SnapxAnnotationCanvas {
     int              undo_depth; /**< Number of committed annotations          */
     int              redo_depth;
 
+    int              callout_next;
+
     /* In-progress stroke (not yet committed) */
     SnapxAnnotation *pending;
 
@@ -109,6 +111,7 @@ SnapxAnnotationCanvas *snapx_canvas_new(int width, int height)
     c->line_width   = 2.5;
     c->scale_x      = 1.0;
     c->scale_y      = 1.0;
+    c->callout_next = 1;
     return c;
 }
 
@@ -183,6 +186,11 @@ void snapx_canvas_stroke_end(SnapxAnnotationCanvas *canvas, double x, double y)
         stroke_push(&n->ann.points, x, y);
     }
 
+    if (n->ann.tool == SNAPX_TOOL_CALLOUT) {
+        n->ann.callout_num = canvas->callout_next++;
+        snprintf(n->ann.text, sizeof(n->ann.text), "%d", n->ann.callout_num);
+    }
+
     /* Push onto undo stack */
     n->prev        = (AnnNode *)canvas->undo_head;
     n->ann.next    = NULL;
@@ -190,7 +198,23 @@ void snapx_canvas_stroke_end(SnapxAnnotationCanvas *canvas, double x, double y)
     canvas->undo_depth++;
 }
 
-/* ─── Undo / Redo ────────────────────────────────────────────────────────── */
+void snapx_canvas_stroke_end_text(SnapxAnnotationCanvas *canvas,
+                                  double x, double y, const char *text)
+{
+    if (!canvas || !canvas->pending) return;
+    AnnNode *n = (AnnNode *)canvas->pending;
+    if (text && text[0])
+        snprintf(n->ann.text, sizeof(n->ann.text), "%s", text);
+    else
+        n->ann.text[0] = '\0';
+    n->ann.rect.x2 = x;
+    n->ann.rect.y2 = y;
+    canvas->pending = NULL;
+    n->prev        = (AnnNode *)canvas->undo_head;
+    n->ann.next    = NULL;
+    canvas->undo_head = &n->ann;
+    canvas->undo_depth++;
+}
 
 void snapx_canvas_undo(SnapxAnnotationCanvas *canvas)
 {

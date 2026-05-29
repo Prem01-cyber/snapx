@@ -27,6 +27,10 @@ void snapx_shortcuts_set_defaults(SnapxShortcuts *sc)
     snprintf(sc->zoom_out, sizeof(sc->zoom_out), "ctrl+minus");
     snprintf(sc->region_confirm, sizeof(sc->region_confirm), "return");
     snprintf(sc->region_cancel, sizeof(sc->region_cancel), "escape");
+    snprintf(sc->upload, sizeof(sc->upload), "ctrl+u");
+    snprintf(sc->ocr, sizeof(sc->ocr), "ctrl+shift+t");
+    snprintf(sc->pin, sizeof(sc->pin), "ctrl+p");
+    snprintf(sc->crop, sizeof(sc->crop), "ctrl+shift+c");
 }
 
 #if !defined(SNAPX_HEADLESS) && (defined(SNAPX_USE_GTK4) || defined(SNAPX_USE_GTK3))
@@ -270,6 +274,7 @@ int snapx_shortcuts_validate(const SnapxShortcuts *sc, char *err, size_t errsz)
         sc->capture_region, sc->capture_window,
         sc->save, sc->copy, sc->undo, sc->redo,
         sc->fit, sc->zoom_in, sc->zoom_out,
+        sc->upload, sc->ocr, sc->pin,
         sc->region_confirm, sc->region_cancel
     };
     const char *names[] = {
@@ -277,6 +282,7 @@ int snapx_shortcuts_validate(const SnapxShortcuts *sc, char *err, size_t errsz)
         "Capture region", "Capture window",
         "Save", "Copy", "Undo", "Redo",
         "Fit", "Zoom in", "Zoom out",
+        "Upload", "OCR", "Pin",
         "Region confirm", "Region cancel"
     };
     const int n = (int)(sizeof(keys) / sizeof(keys[0]));

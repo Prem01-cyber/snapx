@@ -65,6 +65,18 @@ struct SnapxImage {
     int       scale;   /**< HiDPI scale factor (1 = normal, 2 = retina, …)      */
 };
 
+/** @brief Window bounds for snap-to-window region selection. */
+typedef struct {
+    int  x, y, w, h;
+    char title[128];
+} SnapxWindowInfo;
+
+/**
+ * @brief List visible windows in virtual-desktop coordinates.
+ * @return Number of windows written (0 if unsupported).
+ */
+int snapx_list_windows(SnapxWindowInfo *out, int max_out);
+
 /**
  * @brief Allocate a new SnapxImage with zeroed pixel buffer.
  * @param width   Image width.
@@ -207,6 +219,7 @@ SnapxImage *snapx_image_crop_desktop(const SnapxImage *src,
 
 /* ─── Backend init declarations (called by snapx_capture_backend_init) ───── */
 int snapx_capture_x11_init(SnapxCaptureBackend *backend);
+int snapx_x11_list_windows(SnapxWindowInfo *out, int max_out);
 int  snapx_capture_wayland_init(SnapxCaptureBackend *backend);
 void snapx_capture_wayland_set_parent_window(SnapxCaptureBackend *backend,
                                               const char *parent_window_str);

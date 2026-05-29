@@ -38,6 +38,7 @@
 #include "utils/monitor.h"
 #include "output/clipboard.h"
 #include "output/save.h"
+#include "output/upload.h"
 
 #ifndef SNAPX_VERSION_STR
 #define SNAPX_VERSION_STR "unknown"
@@ -53,6 +54,9 @@ typedef struct {
     SnapxOutputFormat format;
     int               jpeg_quality;
     int               copy_clipboard;
+    int               do_upload;
+    int               copy_url;
+    int               background;
     int               show_version;
     int               show_help;
     int               show_info;     /**< --info: print platform probe and exit */
@@ -95,6 +99,9 @@ static void print_help(const char *argv0)
     printf("  -f, --format <fmt>     Output format: png (default), jpeg, webp\n");
     printf("  -q, --quality <1-100>  JPEG/WebP quality (default: 90)\n");
     printf("  -c, --clipboard        Copy to clipboard after capture\n");
+    printf("      --upload           Upload image after capture (requires config)\n");
+    printf("      --copy-url         Copy upload URL to clipboard (with --upload)\n");
+    printf("      --background       Start hidden (tray/background mode)\n");
     printf("  -n, --no-gui           Headless / CLI-only mode\n");
     printf("      --info             Print detected platform info and exit\n");
     printf("  -v, --version          Show version and exit\n");
@@ -135,6 +142,12 @@ static int parse_args(int argc, char **argv, SnapxCliOptions *opts)
             opts->show_info = 1;
         else if (strcmp(a, "-c") == 0 || strcmp(a, "--clipboard") == 0)
             opts->copy_clipboard = 1;
+        else if (strcmp(a, "--upload") == 0)
+            opts->do_upload = 1;
+        else if (strcmp(a, "--copy-url") == 0)
+            opts->copy_url = 1;
+        else if (strcmp(a, "--background") == 0)
+            opts->background = 1;
         else if (strcmp(a, "-n") == 0 || strcmp(a, "--no-gui")    == 0)
             opts->no_gui = 1;
         else if ((strcmp(a, "-m") == 0 || strcmp(a, "--mode") == 0) && i+1 < argc) {
@@ -228,6 +241,22 @@ static int run_headless(SnapxApp *app)
         fprintf(stderr, "[snapx] Copied to clipboard.\n");
     }
 
+    if (app->cli.do_upload && snapx_upload_available()) {
+        SnapxEncodedImage enc;
+        if (snapx_image_encode(img, app->cli.format, app->cli.jpeg_quality, &enc) == 0) {
+            char url[SNAPX_UPLOAD_URL_MAX], err[SNAPX_UPLOAD_ERR_MAX];
+            if (snapx_upload_sync(&enc, &app->config, url, sizeof(url),
+                                  err, sizeof(err)) == 0) {
+                printf("%s\n", url);
+                if (app->cli.copy_url || app->config.upload_copy_url)
+                    snapx_clipboard_copy_text(url);
+            } else {
+                fprintf(stderr, "[snapx] Upload failed: %s\n", err);
+            }
+            snapx_encoded_image_free(&enc);
+        }
+    }
+
     snapx_image_free(img);
     return ret;
 }
@@ -277,6 +306,10 @@ int main(int argc, char **argv)
         g_app.config.jpeg_quality = g_app.cli.jpeg_quality;
     if (g_app.cli.format != SNAPX_FORMAT_PNG)
         g_app.config.default_format = g_app.cli.format;
+    if (g_app.cli.background) {
+        g_app.config.start_in_tray = 1;
+        g_app.config.close_to_tray = 1;
+    }
 
     /* Init backend using probe result (tries preferred then fallback) */
     if (snapx_capture_backend_init_best(&g_app.backend, &g_app.platform) != 0) {

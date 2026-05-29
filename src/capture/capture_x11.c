@@ -315,4 +315,62 @@ int snapx_capture_x11_init(SnapxCaptureBackend *backend)
     return 0;
 }
 
+int snapx_x11_list_windows(SnapxWindowInfo *out, int max_out)
+{
+    if (!out || max_out <= 0) return 0;
+
+    Display *d = XOpenDisplay(NULL);
+    if (!d) return 0;
+
+    Window root = DefaultRootWindow(d);
+    Atom clients = XInternAtom(d, "_NET_CLIENT_LIST", False);
+    Atom frame   = XInternAtom(d, "_NET_FRAME_EXTENTS", False);
+    Atom name    = XInternAtom(d, "_NET_WM_NAME", False);
+    Atom utf8    = XInternAtom(d, "UTF8_STRING", False);
+
+    Atom type; int fmt; unsigned long n, after; unsigned char *data = NULL;
+    int count = 0;
+
+    if (XGetWindowProperty(d, root, clients, 0, 1024, False, XA_WINDOW,
+                           &type, &fmt, &n, &after, &data) != Success || !data) {
+        if (data) XFree(data);
+        XCloseDisplay(d);
+        return 0;
+    }
+
+    Window *wins = (Window *)data;
+    for (unsigned long i = 0; i < n && count < max_out; i++) {
+        long left = 0, right = 0, top = 0, bottom = 0;
+        unsigned char *ext = NULL;
+        unsigned long en = 0, eafter = 0;
+        if (XGetWindowProperty(d, wins[i], frame, 0, 4, False, XA_CARDINAL,
+                               &type, &fmt, &en, &eafter, &ext) == Success && ext) {
+            long *v = (long *)ext;
+            left = v[0]; right = v[1]; top = v[2]; bottom = v[3];
+            XFree(ext);
+        }
+        XWindowAttributes wa;
+        if (!XGetWindowAttributes(d, wins[i], &wa) || wa.map_state != IsViewable)
+            continue;
+
+        out[count].x = wa.x - (int)left;
+        out[count].y = wa.y - (int)top;
+        out[count].w = wa.width + (int)(left + right);
+        out[count].h = wa.height + (int)(top + bottom);
+        out[count].title[0] = '\0';
+
+        unsigned char *nm = NULL;
+        unsigned long nn = 0, nafter = 0;
+        if (XGetWindowProperty(d, wins[i], name, 0, 256, False, utf8,
+                               &type, &fmt, &nn, &nafter, &nm) == Success && nm) {
+            snprintf(out[count].title, sizeof(out[count].title), "%s", (char *)nm);
+            XFree(nm);
+        }
+        count++;
+    }
+    XFree(data);
+    XCloseDisplay(d);
+    return count;
+}
+
 #endif /* SNAPX_HAVE_X11 */

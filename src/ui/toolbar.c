@@ -33,14 +33,56 @@ typedef struct {
     double                 stroke_start_x, stroke_start_y;
 
     /* Tool button references so we can set active state */
-    GtkWidget             *tool_btns[6];   /* matches tools[] order below */
+    GtkWidget             *tool_btns[8];
     GtkWidget             *color_btn;
 
     /* Annotation dirty flag (set on every stroke commit) */
     gboolean               annot_dirty;
+
+    gboolean               input_enabled;
+    GtkWidget             *text_popover;
+    GtkWidget             *text_entry;
+    double                 text_ix, text_iy;
 } ToolbarState;
 
 static ToolbarState g_tb;
+
+static void stroke_point(double wx, double wy, double *ix, double *iy);
+
+static void commit_text_from_entry(GtkEntry *entry, gpointer data)
+{
+    (void)data;
+    if (!g_tb.canvas) return;
+    const char *txt = gtk_editable_get_text(GTK_EDITABLE(entry));
+    snapx_canvas_stroke_end_text(g_tb.canvas, g_tb.text_ix, g_tb.text_iy, txt);
+    g_tb.annot_dirty = TRUE;
+    if (g_tb.text_popover)
+        gtk_popover_popdown(GTK_POPOVER(g_tb.text_popover));
+    snapx_main_schedule_redraw();
+}
+
+static void show_text_popover(GtkWidget *anchor, double wx, double wy)
+{
+    stroke_point(wx, wy, &g_tb.text_ix, &g_tb.text_iy);
+    if (!g_tb.text_popover) {
+        g_tb.text_popover = gtk_popover_new();
+        GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+        gtk_widget_set_margin_start(box, 8);
+        gtk_widget_set_margin_end(box, 8);
+        gtk_widget_set_margin_top(box, 8);
+        gtk_widget_set_margin_bottom(box, 8);
+        g_tb.text_entry = gtk_entry_new();
+        gtk_entry_set_placeholder_text(GTK_ENTRY(g_tb.text_entry), "Enter text…");
+        g_signal_connect(g_tb.text_entry, "activate",
+                         G_CALLBACK(commit_text_from_entry), NULL);
+        gtk_box_append(GTK_BOX(box), g_tb.text_entry);
+        gtk_popover_set_child(GTK_POPOVER(g_tb.text_popover), box);
+    }
+    gtk_widget_set_parent(g_tb.text_popover, anchor);
+    gtk_editable_set_text(GTK_EDITABLE(g_tb.text_entry), "");
+    gtk_popover_popup(GTK_POPOVER(g_tb.text_popover));
+    gtk_widget_grab_focus(g_tb.text_entry);
+}
 
 /* ─── Tool descriptor ────────────────────────────────────────────────────── */
 
@@ -57,6 +99,8 @@ static const ToolDef TOOLS[] = {
     { SNAPX_TOOL_TEXT,      "Text",    "Add text label (T)"           },
     { SNAPX_TOOL_BLUR,      "Blur",    "Blur / censor region (B)"     },
     { SNAPX_TOOL_HIGHLIGHT, "Hi-lite", "Highlight region (H)"         },
+    { SNAPX_TOOL_CALLOUT,   "Callout", "Numbered callout (N)"         },
+    { SNAPX_TOOL_REDACT,    "Redact",  "Solid black redaction"        },
 };
 #define NUM_TOOLS ((int)(sizeof(TOOLS)/sizeof(TOOLS[0])))
 
@@ -126,7 +170,7 @@ static void on_canvas_press(GtkGestureClick *g, int n, double x, double y,
                               gpointer d)
 {
     (void)g; (void)n; (void)d;
-    if (!g_tb.canvas) return;
+    if (!g_tb.canvas || !g_tb.input_enabled) return;
     double ix, iy;
     stroke_point(x, y, &ix, &iy);
     g_tb.in_stroke      = TRUE;
@@ -138,8 +182,15 @@ static void on_canvas_press(GtkGestureClick *g, int n, double x, double y,
 static void on_canvas_release(GtkGestureClick *g, int n, double x, double y,
                                 gpointer d)
 {
-    (void)g; (void)n; (void)d;
-    if (!g_tb.canvas || !g_tb.in_stroke) return;
+    (void)n; (void)d;
+    if (!g_tb.canvas || !g_tb.in_stroke || !g_tb.input_enabled) return;
+    if (g_tb.active_tool == SNAPX_TOOL_TEXT) {
+        g_tb.in_stroke = FALSE;
+        GtkWidget *anchor = gtk_event_controller_get_widget(
+            GTK_EVENT_CONTROLLER(g));
+        show_text_popover(anchor, x, y);
+        return;
+    }
     double ix, iy;
     stroke_point(x, y, &ix, &iy);
     g_tb.in_stroke    = FALSE;
@@ -163,8 +214,8 @@ static void on_canvas_motion(GtkEventControllerMotion *ctrl, double x, double y,
 
 static gboolean on_canvas_press_gtk3(GtkWidget *w, GdkEventButton *ev, gpointer d)
 {
-    (void)w; (void)d;
-    if (!g_tb.canvas || ev->button != 1) return FALSE;
+    (void)d;
+    if (!g_tb.canvas || !g_tb.input_enabled || ev->button != 1) return FALSE;
     double ix, iy;
     stroke_point(ev->x, ev->y, &ix, &iy);
     g_tb.in_stroke = TRUE;
@@ -174,8 +225,14 @@ static gboolean on_canvas_press_gtk3(GtkWidget *w, GdkEventButton *ev, gpointer 
 
 static gboolean on_canvas_release_gtk3(GtkWidget *w, GdkEventButton *ev, gpointer d)
 {
-    (void)w; (void)d;
-    if (!g_tb.canvas || !g_tb.in_stroke || ev->button != 1) return FALSE;
+    (void)d;
+    if (!g_tb.canvas || !g_tb.in_stroke || !g_tb.input_enabled || ev->button != 1)
+        return FALSE;
+    if (g_tb.active_tool == SNAPX_TOOL_TEXT) {
+        g_tb.in_stroke = FALSE;
+        show_text_popover(w, ev->x, ev->y);
+        return FALSE;
+    }
     double ix, iy;
     stroke_point(ev->x, ev->y, &ix, &iy);
     g_tb.in_stroke   = FALSE;
@@ -255,6 +312,11 @@ gboolean snapx_toolbar_in_stroke(void)
     return g_tb.in_stroke;
 }
 
+void snapx_toolbar_set_input_enabled(gboolean enabled)
+{
+    g_tb.input_enabled = enabled;
+}
+
 /* ─── Widget construction ────────────────────────────────────────────────── */
 
 static void apply_tool_selection(SnapxAnnotationTool tool)
@@ -302,6 +364,7 @@ GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
     g_tb.canvas        = canvas;
     g_tb.drawing_area  = drawing_area;
     g_tb.active_tool   = SNAPX_TOOL_RECT;
+    g_tb.input_enabled = TRUE;
     g_tb.active_color  = (GdkRGBA){ 0.96, 0.26, 0.26, 1.0 };
     g_tb.annot_dirty   = FALSE;
     g_tb.color_btn     = NULL;
