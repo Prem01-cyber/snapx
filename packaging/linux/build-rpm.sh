@@ -33,7 +33,8 @@ cp "${SPEC}" "${HOME}/rpmbuild/SPECS/snapx.spec"
 
 rpmbuild -ba "${HOME}/rpmbuild/SPECS/snapx.spec"
 
-find "${HOME}/rpmbuild/RPMS" -name "*.rpm" -exec cp {} "${OUT}/" \;
+find "${HOME}/rpmbuild/RPMS" -name "snapx-[0-9]*.rpm" ! -name "*debug*" \
+    -exec cp {} "${OUT}/" \;
 
 echo "Built RPM(s) in ${OUT}:"
 ls -la "${OUT}/"*.rpm

@@ -295,7 +295,14 @@ static void get_windows_version(int *major, int *minor, int *build)
     *major = *minor = *build = 0;
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     if (!ntdll) return;
-    RtlGetVersion_t fn = (RtlGetVersion_t)GetProcAddress(ntdll, "RtlGetVersion");
+#if defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wcast-function-type"
+#endif
+    RtlGetVersion_t fn = (RtlGetVersion_t)(void *)GetProcAddress(ntdll, "RtlGetVersion");
+#if defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
     if (!fn) return;
     OSVERSIONINFOEXW vi = {0};
     vi.dwOSVersionInfoSize = sizeof(vi);

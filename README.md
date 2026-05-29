@@ -3,8 +3,8 @@
 **A fast, native screenshot tool for Linux, Windows, and macOS**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/github/v/release/Prem01-cyber/snapx?label=version)](https://github.com/Prem01-cyber/snapx/releases/latest)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)](https://github.com/Prem01-cyber/snapx)
+[![Version](https://img.shields.io/github/v/release/Prem01-cyber/snapx?label=v1.1.0&color=green)](https://github.com/Prem01-cyber/snapx/releases/tag/v1.1.0)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20(x86_64%2Farm64)-lightgrey)](https://github.com/Prem01-cyber/snapx/releases/latest)
 
 snapx captures your screen, lets you select a region across multiple monitors, annotate the result, and save or copy it — without Electron, without a browser, and without proprietary GNOME-only APIs. It is written in **C** with **GTK4** and **Cairo**, designed to feel at home on Fedora, GNOME, KDE, Windows, and macOS.
 
@@ -23,6 +23,8 @@ Pre-built binaries are published on the [Releases](https://github.com/Prem01-cyb
 | **Fedora / RHEL** (x86_64) | `snapx-1.1.0-1.*.rpm` | `sudo dnf install ./snapx-1.1.0-1.*.rpm` |
 | **Windows** (64-bit) | `snapx-1.1.0-win64-setup.exe` | Run the installer; launch **snapx** from the Start menu |
 | **macOS** (Apple Silicon / Intel) | `snapx-1.1.0-macos.dmg` | Open the DMG and drag **snapx** to Applications |
+
+> **Note:** Linux AppImage, portable tarball, and Fedora RPM are on [v1.1.0](https://github.com/Prem01-cyber/snapx/releases/tag/v1.1.0). Windows and macOS installers are built by CI and attached to the same release when available.
 
 ### Linux distribution packages
 
@@ -337,7 +339,7 @@ Contributions are welcome. Open an issue or pull request on [GitHub](https://git
 
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+**snapx 1.1.0** is released under the **MIT License** (Copyright © 2026 snapx Team). See [LICENSE](LICENSE) for the full text.
 
 ## Acknowledgements
 

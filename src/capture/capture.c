@@ -317,3 +317,24 @@ void snapx_capture_backend_destroy(SnapxCaptureBackend *backend)
     if (backend && backend->destroy)
         backend->destroy(backend);
 }
+
+#ifndef SNAPX_HAVE_WAYLAND
+void snapx_capture_wayland_set_parent_window(SnapxCaptureBackend *backend,
+                                              const char *parent_window_str)
+{
+    (void)backend;
+    (void)parent_window_str;
+}
+
+void snapx_capture_wayland_set_capture_prefer(SnapxCaptureBackend *backend,
+                                               int prefer_screencast)
+{
+    (void)backend;
+    (void)prefer_screencast;
+}
+
+void snapx_capture_wayland_save_token(SnapxCaptureBackend *backend)
+{
+    (void)backend;
+}
+#endif
