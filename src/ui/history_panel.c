@@ -1,6 +1,6 @@
 /**
  * @file history_panel.c
- * @brief Thumbnail list of recent saves in save_dir.
+ * @brief Overlay file-list of recent saves in save_dir.
  */
 
 #include "history_panel.h"
@@ -12,13 +12,17 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+#define HISTORY_PANEL_WIDTH 220
+
 typedef struct {
     SnapxHistorySelectFn on_select;
     gpointer             userdata;
+    GtkWidget           *outer;
     GtkWidget           *list;
     GtkWidget           *empty_label;
     char                *paths[64];
     int                  n_paths;
+    gboolean             open;
 } HistoryPanel;
 
 typedef struct { char path[512]; time_t mtime; } HistItem;
@@ -38,6 +42,16 @@ static void history_clear_paths(HistoryPanel *hp)
     hp->n_paths = 0;
 }
 
+static void history_panel_apply_open(HistoryPanel *hp)
+{
+    if (!hp || !hp->outer) return;
+    gtk_widget_set_visible(hp->outer, hp->open);
+    if (hp->open)
+        gtk_widget_add_css_class(hp->outer, "open");
+    else
+        gtk_widget_remove_css_class(hp->outer, "open");
+}
+
 static void on_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer data)
 {
     (void)box;
@@ -50,48 +64,21 @@ static void on_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer data)
 
 static GtkWidget *history_row_new(const char *path)
 {
-    GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    const char *base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+
+    GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_add_css_class(row_box, "snapx-history-row");
     gtk_widget_set_margin_start(row_box, 8);
     gtk_widget_set_margin_end(row_box, 8);
-    gtk_widget_set_margin_top(row_box, 6);
-    gtk_widget_set_margin_bottom(row_box, 6);
+    gtk_widget_set_margin_top(row_box, 2);
+    gtk_widget_set_margin_bottom(row_box, 2);
 
-    GtkWidget *thumb;
-#ifdef SNAPX_USE_GTK4
-    thumb = gtk_picture_new_for_filename(path);
-    if (!thumb) {
-        thumb = gtk_label_new("?");
-        gtk_widget_set_size_request(thumb, 72, 72);
-    } else {
-        gtk_picture_set_can_shrink(GTK_PICTURE(thumb), TRUE);
-        gtk_picture_set_content_fit(GTK_PICTURE(thumb), GTK_CONTENT_FIT_COVER);
-        gtk_widget_set_size_request(thumb, 72, 72);
-        gtk_widget_add_css_class(thumb, "snapx-history-thumb");
-    }
-#else
-    GError *err = NULL;
-    GdkPixbuf *pb = gdk_pixbuf_new_from_file_at_scale(path, 72, 72, TRUE, &err);
-    if (pb) {
-        thumb = gtk_image_new_from_pixbuf(pb);
-        g_object_unref(pb);
-        gtk_widget_set_size_request(thumb, 72, 72);
-        gtk_widget_add_css_class(thumb, "snapx-history-thumb");
-    } else {
-        if (err) g_error_free(err);
-        thumb = gtk_label_new("?");
-        gtk_widget_set_size_request(thumb, 72, 72);
-    }
-#endif
-
-    const char *base = strrchr(path, '/');
-    base = base ? base + 1 : path;
     GtkWidget *lbl = gtk_label_new(base);
-    gtk_label_set_xalign(GTK_LABEL(lbl), 0.5f);
+    gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
     gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_MIDDLE);
+    gtk_widget_set_hexpand(lbl, TRUE);
     gtk_widget_add_css_class(lbl, "snapx-history-name");
-
-    gtk_box_append(GTK_BOX(row_box), thumb);
     gtk_box_append(GTK_BOX(row_box), lbl);
     return row_box;
 }
@@ -103,17 +90,24 @@ GtkWidget *snapx_history_panel_new(const SnapxConfig *config,
     HistoryPanel *hp = g_malloc0(sizeof(*hp));
     hp->on_select = on_select;
     hp->userdata  = userdata;
+    hp->open      = FALSE;
 
-    GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_add_css_class(outer, "snapx-history");
+    hp->outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_add_css_class(hp->outer, "snapx-history");
+    gtk_widget_set_halign(hp->outer, GTK_ALIGN_START);
+    gtk_widget_set_valign(hp->outer, GTK_ALIGN_FILL);
+    gtk_widget_set_size_request(hp->outer, HISTORY_PANEL_WIDTH, -1);
+    gtk_widget_set_can_focus(hp->outer, FALSE);
+    gtk_widget_set_visible(hp->outer, FALSE);
 
-    GtkWidget *title = gtk_label_new("Recent");
-    gtk_widget_add_css_class(title, "snapx-settings-section");
-    gtk_widget_set_halign(title, GTK_ALIGN_START);
+    GtkWidget *title = gtk_label_new("Recent saves");
+    gtk_widget_add_css_class(title, "snapx-history-title");
+    gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
     gtk_widget_set_margin_start(title, 10);
+    gtk_widget_set_margin_end(title, 10);
     gtk_widget_set_margin_top(title, 8);
     gtk_widget_set_margin_bottom(title, 4);
-    gtk_box_append(GTK_BOX(outer), title);
+    gtk_box_append(GTK_BOX(hp->outer), title);
 
     GtkWidget *scroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
@@ -122,12 +116,16 @@ GtkWidget *snapx_history_panel_new(const SnapxConfig *config,
 
     hp->list = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(hp->list), GTK_SELECTION_NONE);
+    gtk_widget_add_css_class(hp->list, "snapx-history-list");
     g_signal_connect(hp->list, "row-activated", G_CALLBACK(on_row_activated), hp);
 
     hp->empty_label = gtk_label_new("No recent saves");
     gtk_widget_add_css_class(hp->empty_label, "dim-label");
-    gtk_widget_set_halign(hp->empty_label, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_top(hp->empty_label, 24);
+    gtk_label_set_wrap(GTK_LABEL(hp->empty_label), TRUE);
+    gtk_widget_set_halign(hp->empty_label, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(hp->empty_label, 10);
+    gtk_widget_set_margin_end(hp->empty_label, 10);
+    gtk_widget_set_margin_top(hp->empty_label, 8);
     gtk_widget_set_visible(hp->empty_label, FALSE);
 
     GtkWidget *list_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -139,11 +137,30 @@ GtkWidget *snapx_history_panel_new(const SnapxConfig *config,
 #else
     gtk_container_add(GTK_CONTAINER(scroll), list_box);
 #endif
-    gtk_box_append(GTK_BOX(outer), scroll);
+    gtk_box_append(GTK_BOX(hp->outer), scroll);
 
-    g_object_set_data(G_OBJECT(outer), "snapx-history-panel", hp);
-    snapx_history_panel_refresh(outer, config);
-    return outer;
+    g_object_set_data(G_OBJECT(hp->outer), "snapx-history-panel", hp);
+    snapx_history_panel_refresh(hp->outer, config);
+    return hp->outer;
+}
+
+void snapx_history_panel_set_open(GtkWidget *panel, gboolean open)
+{
+    HistoryPanel *hp = g_object_get_data(G_OBJECT(panel), "snapx-history-panel");
+    if (!hp) return;
+    hp->open = open;
+    history_panel_apply_open(hp);
+}
+
+gboolean snapx_history_panel_is_open(GtkWidget *panel)
+{
+    HistoryPanel *hp = g_object_get_data(G_OBJECT(panel), "snapx-history-panel");
+    return hp ? hp->open : FALSE;
+}
+
+void snapx_history_panel_toggle(GtkWidget *panel)
+{
+    snapx_history_panel_set_open(panel, !snapx_history_panel_is_open(panel));
 }
 
 void snapx_history_panel_refresh(GtkWidget *panel, const SnapxConfig *config)

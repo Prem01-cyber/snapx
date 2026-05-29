@@ -195,8 +195,14 @@ static void on_canvas_release(GtkGestureClick *g, int n, double x, double y,
     stroke_point(x, y, &ix, &iy);
     SnapxAnnotationTool tool = g_tb.active_tool;
     g_tb.in_stroke = FALSE;
-    if (tool != SNAPX_TOOL_BLUR)
-        g_tb.annot_dirty = TRUE;
+    if (tool == SNAPX_TOOL_BLUR) {
+        snapx_main_apply_blur_region(g_tb.stroke_start_x, g_tb.stroke_start_y,
+                                     ix, iy);
+        snapx_canvas_stroke_cancel(g_tb.canvas);
+        snapx_main_schedule_redraw();
+        return;
+    }
+    g_tb.annot_dirty = TRUE;
     snapx_canvas_stroke_end(g_tb.canvas, ix, iy);
     snapx_main_schedule_redraw();
 }
@@ -221,6 +227,8 @@ static gboolean on_canvas_press_gtk3(GtkWidget *w, GdkEventButton *ev, gpointer 
     double ix, iy;
     stroke_point(ev->x, ev->y, &ix, &iy);
     g_tb.in_stroke = TRUE;
+    g_tb.stroke_start_x = ix;
+    g_tb.stroke_start_y = iy;
     snapx_canvas_stroke_begin(g_tb.canvas, ix, iy);
     return FALSE;
 }
@@ -239,8 +247,14 @@ static gboolean on_canvas_release_gtk3(GtkWidget *w, GdkEventButton *ev, gpointe
     stroke_point(ev->x, ev->y, &ix, &iy);
     SnapxAnnotationTool tool = g_tb.active_tool;
     g_tb.in_stroke = FALSE;
-    if (tool != SNAPX_TOOL_BLUR)
-        g_tb.annot_dirty = TRUE;
+    if (tool == SNAPX_TOOL_BLUR) {
+        snapx_main_apply_blur_region(g_tb.stroke_start_x, g_tb.stroke_start_y,
+                                     ix, iy);
+        snapx_canvas_stroke_cancel(g_tb.canvas);
+        snapx_main_schedule_redraw();
+        return FALSE;
+    }
+    g_tb.annot_dirty = TRUE;
     snapx_canvas_stroke_end(g_tb.canvas, ix, iy);
     snapx_main_schedule_redraw();
     return FALSE;

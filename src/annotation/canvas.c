@@ -236,6 +236,13 @@ void snapx_canvas_stroke_end(SnapxAnnotationCanvas *canvas, double x, double y)
     canvas->undo_depth++;
 }
 
+void snapx_canvas_stroke_cancel(SnapxAnnotationCanvas *canvas)
+{
+    if (!canvas) return;
+    annnode_free((AnnNode *)canvas->pending);
+    canvas->pending = NULL;
+}
+
 void snapx_canvas_stroke_end_text(SnapxAnnotationCanvas *canvas,
                                   double x, double y, const char *text)
 {

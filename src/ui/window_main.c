@@ -75,6 +75,7 @@ typedef struct {
     GtkWidget            *zoom_label;    /**< Shows "100%" in the header    */
     GtkWidget            *btn_upload;
     GtkWidget            *btn_ocr;
+    GtkWidget            *btn_recents;
     GtkWidget            *lbl_upload_status;
     GtkWidget            *lbl_ocr_status;
 
@@ -1524,7 +1525,20 @@ static void on_history_select(const char *path, gpointer userdata)
         return;
     }
     snapx_window_main_set_image(img);
+    snapx_history_panel_set_open(mw->history_panel, FALSE);
+    if (mw->btn_recents)
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mw->btn_recents), FALSE);
     set_status(mw, "Loaded from history.");
+}
+
+static void on_recents(GtkToggleButton *btn, gpointer userdata)
+{
+    MainWindow *mw = userdata;
+    if (!mw->history_panel) return;
+    gboolean open = gtk_toggle_button_get_active(btn);
+    if (open)
+        snapx_history_panel_refresh(mw->history_panel, mw->config);
+    snapx_history_panel_set_open(mw->history_panel, open);
 }
 
 static void apply_crop_region(MainWindow *mw)
@@ -1925,19 +1939,27 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
                                     GTK_POLICY_NEVER, GTK_POLICY_NEVER);
 
-    GtkWidget *paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    mw->history_panel = snapx_history_panel_new(config, on_history_select, mw);
-    gtk_widget_set_size_request(mw->history_panel, 180, -1);
+    GtkWidget *canvas_overlay = gtk_overlay_new();
+    gtk_widget_set_vexpand(canvas_overlay, TRUE);
+    gtk_widget_set_hexpand(canvas_overlay, TRUE);
+
 #ifdef SNAPX_USE_GTK4
-    gtk_paned_set_start_child(GTK_PANED(paned), mw->history_panel);
-    gtk_paned_set_end_child(GTK_PANED(paned), scroll);
-    gtk_paned_set_resize_end_child(GTK_PANED(paned), TRUE);
-    gtk_paned_set_shrink_start_child(GTK_PANED(paned), TRUE);
-    gtk_box_append(GTK_BOX(vbox), paned);
+    gtk_overlay_set_child(GTK_OVERLAY(canvas_overlay), scroll);
 #else
-    gtk_paned_pack1(GTK_PANED(paned), mw->history_panel, FALSE, FALSE);
-    gtk_paned_pack2(GTK_PANED(paned), scroll, TRUE, TRUE);
-    gtk_box_pack_start(GTK_BOX(vbox), paned, TRUE, TRUE, 0);
+    gtk_container_add(GTK_CONTAINER(canvas_overlay), scroll);
+#endif
+
+    mw->history_panel = snapx_history_panel_new(config, on_history_select, mw);
+#ifdef SNAPX_USE_GTK4
+    gtk_overlay_add_overlay(GTK_OVERLAY(canvas_overlay), mw->history_panel);
+#else
+    gtk_overlay_add_overlay(GTK_OVERLAY(canvas_overlay), mw->history_panel);
+#endif
+
+#ifdef SNAPX_USE_GTK4
+    gtk_box_append(GTK_BOX(vbox), canvas_overlay);
+#else
+    gtk_box_pack_start(GTK_BOX(vbox), canvas_overlay, TRUE, TRUE, 0);
 #endif
 
 #ifdef SNAPX_USE_GTK4
@@ -2049,20 +2071,25 @@ void snapx_window_main_create(GtkApplication      *app,
     GtkWidget *btn_copy = gtk_button_new_with_label("Copy");
     GtkWidget *btn_ocr = gtk_button_new_with_label("Copy text");
     GtkWidget *btn_upload = gtk_button_new_with_label("Upload");
+    GtkWidget *btn_recents = gtk_toggle_button_new_with_label("Recents");
     GtkWidget *btn_save = gtk_button_new_with_label("Save");
     GtkWidget *btn_folder = gtk_button_new_with_label("Open folder");
-    mw->btn_upload = btn_upload;
-    mw->btn_ocr    = btn_ocr;
+    mw->btn_upload  = btn_upload;
+    mw->btn_ocr     = btn_ocr;
+    mw->btn_recents = btn_recents;
     gtk_widget_add_css_class(btn_save, "suggested-action");
     gtk_widget_set_tooltip_text(btn_copy, "Copy to clipboard  (Ctrl+C)");
     gtk_widget_set_tooltip_text(btn_ocr, "Copy text from image (OCR)");
     gtk_widget_set_tooltip_text(btn_upload, "Upload and copy link  (Ctrl+U)");
+    gtk_widget_set_tooltip_text(btn_recents,
+        "Show recent saves from screenshots folder");
     gtk_widget_set_tooltip_text(btn_save, "Save to file  (Ctrl+S)");
     gtk_widget_set_tooltip_text(btn_folder,
         "Open screenshots folder in file manager (last save location if available)");
     g_signal_connect(btn_copy,   "clicked", G_CALLBACK(on_copy_clipboard), mw);
     g_signal_connect(btn_ocr,    "clicked", G_CALLBACK(on_ocr),            mw);
     g_signal_connect(btn_upload, "clicked", G_CALLBACK(on_upload),         mw);
+    g_signal_connect(btn_recents,"toggled", G_CALLBACK(on_recents),        mw);
     g_signal_connect(btn_save,   "clicked", G_CALLBACK(on_save),           mw);
     g_signal_connect(btn_folder, "clicked", G_CALLBACK(on_open_folder),    mw);
 
@@ -2076,6 +2103,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_upload);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_ocr);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_copy);
+    gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_recents);
 #else
     gtk_box_pack_start(GTK_BOX(action_bar), fmt_label,         FALSE, FALSE, 4);
     gtk_box_pack_start(GTK_BOX(action_bar), mw->format_combo,  FALSE, FALSE, 4);
@@ -2086,6 +2114,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_upload,        FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_ocr,           FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_copy,          FALSE, FALSE, 4);
+    gtk_box_pack_end  (GTK_BOX(action_bar), btn_recents,       FALSE, FALSE, 4);
 #endif
 
     snapx_main_update_workflow_ui(mw);
@@ -2182,12 +2211,26 @@ static void snapx_main_bind_canvas(MainWindow *mw)
 void snapx_main_apply_blur_region(double x1, double y1, double x2, double y2)
 {
     MainWindow *mw = &g_win;
-    if (!mw->current_image) return;
+    if (!mw->current_image) {
+        set_status(mw, "Capture an image before using blur.");
+        return;
+    }
+
+    int iw  = (int)fabs(x2 - x1);
+    int ih  = (int)fabs(y2 - y1);
+    if (iw < 4 || ih < 4) {
+        set_status(mw, "Drag a larger region to blur.");
+        return;
+    }
 
     int ix0 = (int)(x1 < x2 ? x1 : x2);
     int iy0 = (int)(y1 < y2 ? y1 : y2);
-    int iw  = (int)fabs(x2 - x1);
-    int ih  = (int)fabs(y2 - y1);
+    if (ix0 < 0) ix0 = 0;
+    if (iy0 < 0) iy0 = 0;
+    if (ix0 + iw > mw->current_image->width)
+        iw = mw->current_image->width - ix0;
+    if (iy0 + ih > mw->current_image->height)
+        ih = mw->current_image->height - iy0;
     if (iw < 4 || ih < 4) return;
 
     snapx_image_pixelate(mw->current_image, ix0, iy0, iw, ih, 8);
@@ -2196,8 +2239,7 @@ void snapx_main_apply_blur_region(double x1, double y1, double x2, double y2)
         cairo_surface_destroy(mw->display_surface);
     mw->display_surface = make_display_surface(mw->current_image);
     invalidate_scaled(mw);
-    if (mw->drawing_area)
-        gtk_widget_queue_draw(mw->drawing_area);
+    snapx_main_schedule_redraw();
     set_status(mw, "Region pixelated.");
 }
 

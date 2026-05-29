@@ -53,6 +53,9 @@ void snapx_canvas_stroke_update(SnapxAnnotationCanvas *canvas, double x, double 
  */
 void snapx_canvas_stroke_end(SnapxAnnotationCanvas *canvas, double x, double y);
 
+/** Discard the in-progress stroke without committing it to the undo stack. */
+void snapx_canvas_stroke_cancel(SnapxAnnotationCanvas *canvas);
+
 /** Commit pending TEXT annotation with @p text (popover entry). */
 void snapx_canvas_stroke_end_text(SnapxAnnotationCanvas *canvas,
                                   double x, double y, const char *text);

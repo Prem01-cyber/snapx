@@ -209,34 +209,42 @@ window.snapx-settings label.error {
   margin-top: 4px;
 }
 
-/* ── Recent captures sidebar ─────────────────────────────────────────────── */
+/* ── Recent captures overlay (file list) ─────────────────────────────────── */
 
 .snapx-history {
-  background-color: alpha(@window_bg_color, 0.6);
-  border-right: 1px solid alpha(@borders, 0.5);
+  background-color: alpha(@window_bg_color, 0.96);
+  border-right: 1px solid alpha(@borders, 0.55);
+  box-shadow: 2px 0 10px alpha(@shade_color, 0.28);
+}
+
+.snapx-history-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.snapx-history-list {
+  background: transparent;
 }
 
 .snapx-history-row {
-  border-radius: 8px;
-  padding: 4px;
+  border-radius: 0;
+  padding: 0;
+  min-height: 26px;
 }
 
 .snapx-history-row:hover {
-  background-color: alpha(@accent_bg_color, 0.12);
+  background-color: alpha(@accent_bg_color, 0.10);
 }
 
 list row:selected .snapx-history-row {
-  background-color: alpha(@accent_bg_color, 0.2);
-}
-
-.snapx-history-thumb {
-  border-radius: 6px;
-  border: 1px solid alpha(@borders, 0.6);
+  background-color: alpha(@accent_bg_color, 0.18);
 }
 
 .snapx-history-name {
-  font-size: 0.78rem;
-  opacity: 0.85;
+  font-size: 0.82rem;
+  opacity: 0.92;
+  padding: 4px 0;
 }
 
 label.dim-label {
