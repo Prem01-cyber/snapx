@@ -464,7 +464,13 @@ static void pw_on_param_changed(void *data, uint32_t id,
                     info.info.raw.size.width, info.info.raw.size.height)),
             SPA_FORMAT_VIDEO_framerate,
                 SPA_POD_Fraction(&SPA_FRACTION(0, 1)));
+#if defined(PW_CHECK_VERSION) && PW_CHECK_VERSION(0, 3, 70)
     pw_stream_set_param(pc->stream, SPA_PARAM_Format, fmt_pod);
+#else
+    /* PipeWire < 0.3.70 (e.g. Ubuntu 22.04): use update_params instead. */
+    const struct spa_pod *params[] = { fmt_pod };
+    pw_stream_update_params(pc->stream, params, 1);
+#endif
 }
 
 static void pw_on_state_changed(void *data, enum pw_stream_state old,
