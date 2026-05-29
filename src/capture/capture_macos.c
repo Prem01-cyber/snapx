@@ -35,6 +35,11 @@
 #  import <ScreenCaptureKit/ScreenCaptureKit.h>
 #endif
 
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 /* ─── Version helpers ────────────────────────────────────────────────────── */
 
 typedef struct { int major, minor, patch; } OsVersion;
@@ -232,8 +237,16 @@ static SnapxImage *sck_capture_display(CGDirectDisplayID display_id)
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
         SCShareableContent *content = nil;
-        NSError *err = nil;
-        content = [SCShareableContent getShareableContentSynchronouslyWithError:&err];
+        __block NSError *err = nil;
+        dispatch_semaphore_t content_sem = dispatch_semaphore_create(0);
+        [SCShareableContent getShareableContentWithCompletionHandler:
+            ^(SCShareableContent *c, NSError *e) {
+            content = c;
+            err = e;
+            dispatch_semaphore_signal(content_sem);
+        }];
+        dispatch_semaphore_wait(content_sem,
+            dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
         if (!content) {
             fprintf(stderr, "[macos/sck] SCShareableContent failed: %s\n",
                     err ? [[err localizedDescription] UTF8String] : "unknown");
@@ -382,5 +395,9 @@ int snapx_capture_macos_init(SnapxCaptureBackend *backend)
             v.major, v.minor, v.patch, st->use_sck ? "ScreenCaptureKit" : "CoreGraphics");
     return 0;
 }
+
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#endif
 
 #endif /* SNAPX_PLATFORM_MACOS */

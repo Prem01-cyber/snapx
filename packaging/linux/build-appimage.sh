@@ -21,7 +21,6 @@ rm -rf "$APPDIR"
 DESTDIR="$APPDIR" cmake --install "$BUILD" --prefix /usr
 
 # AppRun + desktop at AppDir root for AppImage
-install -Dm755 "${APPDIR}/usr/bin/snapx" "${APPDIR}/usr/bin/snapx"
 cp "${APPDIR}/usr/share/applications/snapx.desktop" "${APPDIR}/snapx.desktop" 2>/dev/null || \
     cp "${ROOT}/packaging/linux/snapx.desktop" "${APPDIR}/snapx.desktop"
 sed -i 's|Exec=snapx|Exec=snapx|g' "${APPDIR}/snapx.desktop" 2>/dev/null || true

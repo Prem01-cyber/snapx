@@ -14,6 +14,9 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/stat.h>
+#ifdef SNAPX_PLATFORM_WINDOWS
+#  include <direct.h>
+#endif
 
 /* libpng */
 #include <png.h>
