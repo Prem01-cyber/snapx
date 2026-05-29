@@ -5,6 +5,32 @@ All notable changes to snapx are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-05-29
+
+### Added
+
+- **Upload / share** — Imgur or custom POST URL via optional libcurl; Settings UI, CLI flags, async upload with cancel
+- **OCR** — Copy text from captures via optional Tesseract; async processing with Stop, status strip and Settings hints
+- **Recent saves** — File-list overlay toggled from **Recents** button in the action bar
+- **Annotation tools** — Numbered callouts, solid redaction, text popover entry, post-capture crop, pin-to-screen
+- **Capture overlay** — Magnifier loupe (Space), window snap highlight, window list for region mode
+- **Background mode** — System tray, close-to-tray, `--background`, autostart desktop entry
+- **Session D-Bus** — `CaptureRegion`, `Show`, `Save`, `GetLastPath` on `io.github.snapx`
+- **Flatpak** manifest and CI bundle job
+
+### Fixed
+
+- **Blur / pixelate** tool now mutates base image pixels (was a no-op overlay stroke)
+- Upload and OCR buttons always visible with capability status; disabled states and Settings shortcuts when unavailable
+- OCR and upload run off the main thread; in-flight jobs can be cancelled
+
+### Changed
+
+- Workflow status strip above action bar (Upload / OCR readiness)
+- Recent-captures sidebar redesigned: compact filename list, no permanent canvas gutter
+
+[1.3.0]: https://github.com/Prem01-cyber/snapx/releases/tag/v1.3.0
+
 ## [1.2.1] - 2026-05-29
 
 ### Fixed

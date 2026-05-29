@@ -3,7 +3,7 @@
 **A fast, native screenshot tool for Linux, Windows, and macOS**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v1.2.1-green)](https://github.com/Prem01-cyber/snapx/releases/latest)
+[![Release](https://img.shields.io/badge/release-v1.3.0-green)](https://github.com/Prem01-cyber/snapx/releases/latest)
 [![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?logo=linux&logoColor=black)](https://github.com/Prem01-cyber/snapx/releases/latest)
 [![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows&logoColor=white)](https://github.com/Prem01-cyber/snapx/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-universal-000000?logo=apple&logoColor=white)](https://github.com/Prem01-cyber/snapx/releases/latest)
@@ -16,7 +16,7 @@ snapx captures your screen, lets you select a region across multiple monitors, a
 
 ## Downloads
 
-Pre-built binaries are on the [Releases](https://github.com/Prem01-cyber/snapx/releases/latest) page. File names include the version (e.g. `snapx-1.2.1-…`).
+Pre-built binaries are on the [Releases](https://github.com/Prem01-cyber/snapx/releases/latest) page. File names include the version (e.g. `snapx-1.3.0-…`).
 
 | Platform | File (pattern) | Install |
 |----------|----------------|---------|
@@ -345,10 +345,10 @@ sudo cmake --install build   # optional
 ### Packaging locally
 
 ```bash
-./packaging/linux/build-appimage.sh 1.2.1      # Linux AppImage + tarball
-./packaging/linux/build-rpm.sh 1.2.1           # Fedora/RHEL RPM (on Fedora)
-./packaging/macos/build-dmg.sh 1.2.1           # macOS only
-# Windows (MSYS2): ./packaging/windows/build-installer.sh 1.2.1
+./packaging/linux/build-appimage.sh 1.3.0      # Linux AppImage + tarball
+./packaging/linux/build-rpm.sh 1.3.0           # Fedora/RHEL RPM (on Fedora)
+./packaging/macos/build-dmg.sh 1.3.0           # macOS only
+# Windows (MSYS2): ./packaging/windows/build-installer.sh 1.3.0
 ```
 
 ---
@@ -356,8 +356,8 @@ sudo cmake --install build   # optional
 ## Releasing (maintainers)
 
 ```bash
-git tag -a v1.2.1 -m "snapx 1.2.1"
-git push origin v1.2.1
+git tag -a v1.3.0 -m "snapx 1.3.0"
+git push origin v1.3.0
 ```
 
 GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)) builds and uploads the AppImage, Windows installer, and macOS DMG to the GitHub Release.
@@ -398,7 +398,7 @@ Contributions are welcome. Open an issue or pull request on [GitHub](https://git
 
 ## License
 
-**snapx 1.2.1** is released under the **MIT License** (Copyright © 2026 snapx Team). See [LICENSE](LICENSE) for the full text.
+**snapx 1.3.0** is released under the **MIT License** (Copyright © 2026 snapx Team). See [LICENSE](LICENSE) for the full text.
 
 ## Acknowledgements
 
