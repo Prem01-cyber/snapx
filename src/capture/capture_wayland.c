@@ -24,6 +24,7 @@
 
 /* GIO / DBus */
 #include <gio/gio.h>
+#include <gio/gunixfdlist.h>
 #include <glib.h>
 #include <glib-unix.h>
 
