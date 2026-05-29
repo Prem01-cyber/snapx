@@ -3,7 +3,7 @@
 **A fast, native screenshot tool for Linux, Windows, and macOS**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/github/v/release/Prem01-cyber/snapx?label=v1.2.0&color=green)](https://github.com/Prem01-cyber/snapx/releases/tag/v1.2.0)
+[![Version](https://img.shields.io/github/v/release/Prem01-cyber/snapx?color=green)](https://github.com/Prem01-cyber/snapx/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20(x86_64%2Farm64)-lightgrey)](https://github.com/Prem01-cyber/snapx/releases/latest)
 
 snapx captures your screen, lets you select a region across multiple monitors, annotate the result, and save or copy it — without Electron, without a browser, and without proprietary GNOME-only APIs. It is written in **C** with **GTK4** and **Cairo**, designed to feel at home on Fedora, GNOME, KDE, Windows, and macOS.
@@ -14,17 +14,17 @@ snapx captures your screen, lets you select a region across multiple monitors, a
 
 ## Downloads
 
-Pre-built binaries are published on the [Releases](https://github.com/Prem01-cyber/snapx/releases/latest) page for each tagged version (e.g. **v1.2.0**).
+Pre-built binaries are on the [Releases](https://github.com/Prem01-cyber/snapx/releases/latest) page. File names include the version (e.g. `snapx-1.2.0-…`).
 
-| Platform | File | Install |
-|----------|------|---------|
-| **Linux** (x86_64) | `snapx-1.2.0-x86_64.AppImage` | `chmod +x snapx-*-x86_64.AppImage && ./snapx-*-x86_64.AppImage` |
-| **Linux** (portable) | `snapx-1.2.0-linux-x86_64.tar.gz` | Extract and run `usr/bin/snapx` |
-| **Fedora / RHEL** (x86_64) | `snapx-1.2.0-1.*.rpm` | `sudo dnf install ./snapx-1.2.0-1.*.rpm` |
-| **Windows** (64-bit) | `snapx-1.2.0-win64-setup.exe` | Run the installer; launch **snapx** from the Start menu |
-| **macOS** (Apple Silicon / Intel) | `snapx-1.2.0-macos.dmg` | Open the DMG and drag **snapx** to Applications |
+| Platform | File (pattern) | Install |
+|----------|----------------|---------|
+| **Linux** (x86_64) | `snapx-*-x86_64.AppImage` | `chmod +x snapx-*-x86_64.AppImage && ./snapx-*-x86_64.AppImage` |
+| **Linux** (portable) | `snapx-*-linux-x86_64.tar.gz` | Extract and run `usr/bin/snapx` |
+| **Fedora / RHEL** (x86_64) | `snapx-*-*.x86_64.rpm` | `sudo dnf install ./snapx-*-*.x86_64.rpm` |
+| **Windows** (64-bit) | `snapx-*-win64-setup.exe` | Run the installer; launch **snapx** from the Start menu |
+| **macOS** (Apple Silicon / Intel) | `snapx-*-macos.dmg` | Open the DMG and drag **snapx** to Applications |
 
-> **Note:** All platforms are built by CI and attached to [v1.2.0](https://github.com/Prem01-cyber/snapx/releases/tag/v1.2.0) when available.
+> **Note:** CI attaches all platform builds to each [release tag](https://github.com/Prem01-cyber/snapx/releases). If a platform is missing, check the [Release workflow](https://github.com/Prem01-cyber/snapx/actions/workflows/release.yml) for that tag.
 
 ### Linux distribution packages
 
@@ -39,6 +39,7 @@ Pre-built binaries are published on the [Releases](https://github.com/Prem01-cyb
 | Platform | Requirement |
 |----------|-------------|
 | Linux (Wayland) | XDG Desktop Portal (`xdg-desktop-portal` + backend, e.g. `xdg-desktop-portal-gnome` on GNOME) |
+| Linux (Wayland, global hotkeys) | Portal **GlobalShortcuts** (GNOME 45+ / KDE Plasma 6+); install snapx so `io.github.snapx.desktop` and `snapx` are on `PATH` |
 | Linux (Wayland, optional ScreenCast) | PipeWire |
 | Linux (X11) | X11 session with RandR |
 | Windows | Windows 10 or newer (DXGI; GDI fallback on older builds) |
@@ -74,7 +75,7 @@ Release builds are **not notarized**. On first launch: right-click the app → *
 | **Annotation** | Rectangle, arrow, pen, text, blur/pixelate, highlight |
 | **Output** | PNG, JPEG (quality 1–100), WebP |
 | **Clipboard** | Manual copy or auto-copy after each capture (Settings) |
-| **Hotkeys** | Configurable global hotkey (default `Super+Shift+S`) + in-app shortcuts |
+| **Hotkeys** | Global hotkeys: X11 & Windows (native); **Wayland** via portal GlobalShortcuts; in-app shortcuts always available |
 | **GUI** | GTK4 (GTK3 fallback when GTK4 is unavailable) |
 | **CLI** | Headless mode for scripts (`--no-gui`) |
 | **Settings** | INI config with live filename preview |
@@ -110,7 +111,7 @@ snapx
 2. For region mode: drag on the frozen overlay, press **Enter** to confirm or **Escape** to cancel.
 3. Annotate, then **Save** (`Ctrl+S`) or **Copy** (`Ctrl+C`).
 
-Default global hotkey: **`Super+Shift+S`** (configurable in `~/.config/snapx/config.ini`).
+Default global hotkey: **`Super+Shift+S`** (Settings → Shortcuts, or `~/.config/snapx/config.ini`). On Wayland, approve global shortcuts in the portal dialog the first time you run snapx.
 
 ### CLI (headless)
 
@@ -162,6 +163,17 @@ wayland_capture_prefer = screenshot   ; or screencast
 **Region capture** takes one full-desktop screenshot, then shows a **native 1:1 freeze on each monitor** so selection stays aligned on HiDPI and multi-monitor layouts.
 
 Capture runs on a **background thread** so the UI stays responsive while the portal completes.
+
+### Global hotkeys on Wayland
+
+On Wayland, system-wide shortcuts use **`org.freedesktop.portal.GlobalShortcuts`** (not raw key grabs):
+
+1. Install snapx (RPM, AppImage, or `cmake --install`) so **`snapx` is in `PATH`** and **`io.github.snapx.desktop`** is installed.
+2. Launch from the app menu (or an installed `snapx` binary), not a raw `./build/snapx` from the build tree.
+3. On first run, approve shortcuts in the **portal dialog** (GNOME Settings → Keyboard also lists them afterward).
+4. Defaults: **`Super+Shift+S`** (open snapx), **`Ctrl+Shift+1`–`4`** (capture modes).
+
+On **X11** and **Windows**, global hotkeys use the native grab APIs and do not need the portal.
 
 ---
 

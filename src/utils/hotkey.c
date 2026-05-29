@@ -42,6 +42,7 @@ void snapx_hotkey_set_callback(SnapxHotkeyCallback cb, gpointer user_data)
 #endif
 }
 
+#if defined(SNAPX_PLATFORM_LINUX)
 static int linux_session_is_wayland(void)
 {
     const char *t = getenv("XDG_SESSION_TYPE");
@@ -51,6 +52,7 @@ static int linux_session_is_wayland(void)
         return 1;
     return 0;
 }
+#endif
 
 /* ─────────────────────────────────── Linux X11 ──────────────────────────── */
 #if defined(SNAPX_PLATFORM_LINUX) && defined(SNAPX_HAVE_X11)
