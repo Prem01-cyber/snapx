@@ -1,5 +1,5 @@
 Name:           snapx
-Version:        1.2.0
+Version:        1.2.1
 Release:        1%{?dist}
 Summary:        Lightweight cross-platform screenshot utility
 License:        MIT
@@ -84,6 +84,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/snapx.desktop
 %{_datadir}/icons/hicolor/*/apps/snapx.*
 
 %changelog
+* Fri May 29 2026 snapx Team <snapx@example.com> - 1.2.1-1
+- Settings UI fixes, color picker crash fix, Debug build without libasan
+
 * Fri May 29 2026 snapx Team <snapx@example.com> - 1.2.0-1
 - Wayland global hotkeys via xdg-desktop-portal GlobalShortcuts
 

@@ -5,6 +5,24 @@ All notable changes to snapx are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-05-29
+
+### Fixed
+
+- **Color picker crash** in Settings and toolbar (`gtk_color_dialog_choose_rgba` assertion after premature unref)
+- **Settings dialog switches** (Include cursor, Auto copy, Play sound) stretching to full row width
+- **Shortcuts tab** layout: grid with Action / Shortcut / Record / Clear columns
+- GTK markup warning for section titles containing `&` (e.g. Global & capture)
+- Debug build link failure when `libasan` is not installed (AddressSanitizer now opt-in)
+- Linux CI on older PipeWire (`pw_stream_update_params` fallback) and ubuntu-24.04 runner
+
+### Changed
+
+- Settings dialog: separate Options groups for toggles, improved pref-row alignment
+- README badges: static release and per-platform badges (shields.io GitHub API was unreliable)
+
+[1.2.1]: https://github.com/Prem01-cyber/snapx/releases/tag/v1.2.1
+
 ## [1.2.0] - 2026-05-29
 
 ### Added
