@@ -203,7 +203,7 @@ static void probe_linux(SnapxPlatformInfo *info, int quiet)
     osrel_get("VERSION_ID",    version, sizeof(version));
     osrel_get("PRETTY_NAME",   pretty,  sizeof(pretty));
     snprintf(info->distro_id,      sizeof(info->distro_id),      "%s", id);
-    snprintf(info->distro_version, sizeof(info->distro_version), "%s", version);
+    snprintf(info->distro_version, sizeof(info->distro_version), "%.15s", version);
     snprintf(info->distro_pretty,  sizeof(info->distro_pretty),
              "%s", pretty[0] ? pretty : id);
     snprintf(info->os_version, sizeof(info->os_version),

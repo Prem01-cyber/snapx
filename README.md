@@ -3,8 +3,10 @@
 **A fast, native screenshot tool for Linux, Windows, and macOS**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/github/v/release/Prem01-cyber/snapx?color=green)](https://github.com/Prem01-cyber/snapx/releases/latest)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20(x86_64%2Farm64)-lightgrey)](https://github.com/Prem01-cyber/snapx/releases/latest)
+[![Release](https://img.shields.io/badge/release-v1.2.0-green)](https://github.com/Prem01-cyber/snapx/releases/latest)
+[![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?logo=linux&logoColor=black)](https://github.com/Prem01-cyber/snapx/releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows&logoColor=white)](https://github.com/Prem01-cyber/snapx/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-universal-000000?logo=apple&logoColor=white)](https://github.com/Prem01-cyber/snapx/releases/latest)
 
 snapx captures your screen, lets you select a region across multiple monitors, annotate the result, and save or copy it — without Electron, without a browser, and without proprietary GNOME-only APIs. It is written in **C** with **GTK4** and **Cairo**, designed to feel at home on Fedora, GNOME, KDE, Windows, and macOS.
 
