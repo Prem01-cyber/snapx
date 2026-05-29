@@ -182,7 +182,9 @@ static void read_kernel_version(int *major, int *minor, int *patch)
     FILE *f = fopen("/proc/version", "r");
     if (!f) return;
     /* Format: "Linux version M.m.p ..." */
-    fscanf(f, "Linux version %d.%d.%d", major, minor, patch);
+    if (fscanf(f, "Linux version %d.%d.%d", major, minor, patch) < 1) {
+        *major = *minor = *patch = 0;
+    }
     fclose(f);
 }
 

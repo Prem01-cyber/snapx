@@ -206,6 +206,9 @@ elseif(PLATFORM_WINDOWS)
     list(APPEND SOURCES src/capture/capture_windows.c)
 elseif(PLATFORM_MACOS)
     list(APPEND SOURCES src/capture/capture_macos.c)
+    if(SCREENCAPTUREKIT)
+        set_source_files_properties(src/capture/capture_macos.c PROPERTIES LANGUAGE OBJC)
+    endif()
 endif()
 
 # ─── Resources (GLib resource bundle) ────────────────────────────────────────

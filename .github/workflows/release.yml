@@ -84,10 +84,18 @@ jobs:
           fi
 
       - name: Install Inno Setup
-        run: choco install innosetup -y
+        shell: pwsh
+        run: |
+          $dir = "C:\InnoSetup"
+          $installer = "$env:RUNNER_TEMP\innosetup-install.exe"
+          Invoke-WebRequest -Uri "https://files.jrsoftware.org/is/6/innosetup-6.4.3.exe" -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/DIR=$dir" -Wait
+          echo "$dir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build installer
         run: bash packaging/windows/build-installer.sh "${{ steps.ver.outputs.version }}"
+        env:
+          ISCC: C:/InnoSetup/ISCC.exe
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
