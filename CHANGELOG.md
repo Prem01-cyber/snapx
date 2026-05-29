@@ -5,6 +5,22 @@ All notable changes to snapx are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-05-29
+
+### Added
+
+- **Linux Wayland global hotkeys** via `org.freedesktop.portal.GlobalShortcuts` (GNOME 45+ / KDE 6+)
+- Host portal app-id registration (`io.github.snapx`) for native (non-Flatpak) installs
+- `io.github.snapx.desktop` alongside `snapx.desktop` in Linux packages and AppImage
+
+### Fixed
+
+- Portal `Activated` signal parsing (`(osta{sv})`) so global shortcuts fire without GLib CRITICAL errors
+- Session handle extraction and D-Bus variant building for `BindShortcuts`
+- Global hotkeys on Wayland when snapx is installed (desktop file + binary in `PATH`)
+
+[1.2.0]: https://github.com/Prem01-cyber/snapx/releases/tag/v1.2.0
+
 ## [1.1.0] - 2026-05-29
 
 ### Added

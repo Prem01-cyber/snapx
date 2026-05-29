@@ -3,7 +3,7 @@
 **A fast, native screenshot tool for Linux, Windows, and macOS**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/github/v/release/Prem01-cyber/snapx?label=v1.1.0&color=green)](https://github.com/Prem01-cyber/snapx/releases/tag/v1.1.0)
+[![Version](https://img.shields.io/github/v/release/Prem01-cyber/snapx?label=v1.2.0&color=green)](https://github.com/Prem01-cyber/snapx/releases/tag/v1.2.0)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20(x86_64%2Farm64)-lightgrey)](https://github.com/Prem01-cyber/snapx/releases/latest)
 
 snapx captures your screen, lets you select a region across multiple monitors, annotate the result, and save or copy it — without Electron, without a browser, and without proprietary GNOME-only APIs. It is written in **C** with **GTK4** and **Cairo**, designed to feel at home on Fedora, GNOME, KDE, Windows, and macOS.
@@ -14,17 +14,17 @@ snapx captures your screen, lets you select a region across multiple monitors, a
 
 ## Downloads
 
-Pre-built binaries are published on the [Releases](https://github.com/Prem01-cyber/snapx/releases/latest) page for each tagged version (e.g. **v1.1.0**).
+Pre-built binaries are published on the [Releases](https://github.com/Prem01-cyber/snapx/releases/latest) page for each tagged version (e.g. **v1.2.0**).
 
 | Platform | File | Install |
 |----------|------|---------|
-| **Linux** (x86_64) | `snapx-1.1.0-x86_64.AppImage` | `chmod +x snapx-*-x86_64.AppImage && ./snapx-*-x86_64.AppImage` |
-| **Linux** (portable) | `snapx-1.1.0-linux-x86_64.tar.gz` | Extract and run `usr/bin/snapx` |
-| **Fedora / RHEL** (x86_64) | `snapx-1.1.0-1.*.rpm` | `sudo dnf install ./snapx-1.1.0-1.*.rpm` |
-| **Windows** (64-bit) | `snapx-1.1.0-win64-setup.exe` | Run the installer; launch **snapx** from the Start menu |
-| **macOS** (Apple Silicon / Intel) | `snapx-1.1.0-macos.dmg` | Open the DMG and drag **snapx** to Applications |
+| **Linux** (x86_64) | `snapx-1.2.0-x86_64.AppImage` | `chmod +x snapx-*-x86_64.AppImage && ./snapx-*-x86_64.AppImage` |
+| **Linux** (portable) | `snapx-1.2.0-linux-x86_64.tar.gz` | Extract and run `usr/bin/snapx` |
+| **Fedora / RHEL** (x86_64) | `snapx-1.2.0-1.*.rpm` | `sudo dnf install ./snapx-1.2.0-1.*.rpm` |
+| **Windows** (64-bit) | `snapx-1.2.0-win64-setup.exe` | Run the installer; launch **snapx** from the Start menu |
+| **macOS** (Apple Silicon / Intel) | `snapx-1.2.0-macos.dmg` | Open the DMG and drag **snapx** to Applications |
 
-> **Note:** All platforms are built by CI and attached to [v1.1.0](https://github.com/Prem01-cyber/snapx/releases/tag/v1.1.0) when available.
+> **Note:** All platforms are built by CI and attached to [v1.2.0](https://github.com/Prem01-cyber/snapx/releases/tag/v1.2.0) when available.
 
 ### Linux distribution packages
 
@@ -286,10 +286,10 @@ sudo cmake --install build   # optional
 ### Packaging locally
 
 ```bash
-./packaging/linux/build-appimage.sh 1.1.0      # Linux AppImage + tarball
-./packaging/linux/build-rpm.sh 1.1.0           # Fedora/RHEL RPM (on Fedora)
-./packaging/macos/build-dmg.sh 1.1.0           # macOS only
-# Windows (MSYS2): ./packaging/windows/build-installer.sh 1.1.0
+./packaging/linux/build-appimage.sh 1.2.0      # Linux AppImage + tarball
+./packaging/linux/build-rpm.sh 1.2.0           # Fedora/RHEL RPM (on Fedora)
+./packaging/macos/build-dmg.sh 1.2.0           # macOS only
+# Windows (MSYS2): ./packaging/windows/build-installer.sh 1.2.0
 ```
 
 ---
@@ -297,8 +297,8 @@ sudo cmake --install build   # optional
 ## Releasing (maintainers)
 
 ```bash
-git tag -a v1.1.0 -m "snapx 1.1.0"
-git push origin v1.1.0
+git tag -a v1.2.0 -m "snapx 1.2.0"
+git push origin v1.2.0
 ```
 
 GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)) builds and uploads the AppImage, Windows installer, and macOS DMG to the GitHub Release.
@@ -339,7 +339,7 @@ Contributions are welcome. Open an issue or pull request on [GitHub](https://git
 
 ## License
 
-**snapx 1.1.0** is released under the **MIT License** (Copyright © 2026 snapx Team). See [LICENSE](LICENSE) for the full text.
+**snapx 1.2.0** is released under the **MIT License** (Copyright © 2026 snapx Team). See [LICENSE](LICENSE) for the full text.
 
 ## Acknowledgements
 
