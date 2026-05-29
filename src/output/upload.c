@@ -5,6 +5,8 @@
 
 #include "upload.h"
 
+#include "../utils/config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,11 +70,13 @@ static int extract_json_link(const char *json, char *url, size_t urlsz)
 static int extract_json_field(const char *json, const char *field,
                                char *out, size_t outsz)
 {
-    char pattern[64];
-    snprintf(pattern, sizeof(pattern), "\"%s\":\"", field);
+    char pattern[128];
+    int n = snprintf(pattern, sizeof(pattern), "\"%s\":\"", field);
+    if (n < 0 || (size_t)n >= sizeof(pattern)) return -1;
     const char *p = strstr(json, pattern);
     if (!p) {
-        snprintf(pattern, sizeof(pattern), "\"%s\": \"", field);
+        n = snprintf(pattern, sizeof(pattern), "\"%s\": \"", field);
+        if (n < 0 || (size_t)n >= sizeof(pattern)) return -1;
         p = strstr(json, pattern);
     }
     if (!p) return -1;
@@ -116,7 +120,7 @@ static int do_upload(UploadJob *job, char *url, size_t urlsz,
             curl_easy_cleanup(curl);
             return -1;
         }
-        char auth[128];
+        char auth[SNAPX_CONFIG_MAX_UPLOAD + 32];
         snprintf(auth, sizeof(auth), "Authorization: Client-ID %s",
                  job->config.upload_imgur_client_id);
         headers = curl_slist_append(headers, auth);

@@ -2,7 +2,7 @@
 ; Build: iscc installer.iss
 
 #define MyAppName      "snapx"
-#define MyAppVersion   "1.3.0"
+#define MyAppVersion   "1.3.1"
 #define MyAppPublisher "snapx Team"
 #define MyAppURL       "https://github.com/Prem01-cyber/snapx"
 #define MyAppExeName   "snapx.exe"
