@@ -481,6 +481,16 @@ void snapx_hotkey_cleanup(void)
     g_win_n_hks = 0;
 }
 
+void snapx_hotkey_set_application_id(const char *app_id)
+{
+    (void)app_id;
+}
+
+void snapx_hotkey_set_parent_window(const char *parent_window)
+{
+    (void)parent_window;
+}
+
 /* ─────────────────────────────────── macOS ──────────────────────────────── */
 #elif defined(SNAPX_PLATFORM_MACOS)
 
@@ -622,6 +632,16 @@ void snapx_hotkey_cleanup(void)
         g_rl_source = NULL;
     }
     g_mac_n_hks = 0;
+}
+
+void snapx_hotkey_set_application_id(const char *app_id)
+{
+    (void)app_id;
+}
+
+void snapx_hotkey_set_parent_window(const char *parent_window)
+{
+    (void)parent_window;
 }
 
 #else
