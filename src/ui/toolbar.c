@@ -15,6 +15,7 @@
 #include "window_main.h"
 #include "../annotation/canvas.h"
 #include "../annotation/annotation.h"
+#include "../utils/config.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -33,6 +34,7 @@ typedef struct {
 
     /* Tool button references so we can set active state */
     GtkWidget             *tool_btns[6];   /* matches tools[] order below */
+    GtkWidget             *color_btn;
 
     /* Annotation dirty flag (set on every stroke commit) */
     gboolean               annot_dirty;
@@ -255,15 +257,64 @@ gboolean snapx_toolbar_in_stroke(void)
 
 /* ─── Widget construction ────────────────────────────────────────────────── */
 
+static void apply_tool_selection(SnapxAnnotationTool tool)
+{
+    g_tb.active_tool = tool;
+    for (int i = 0; i < NUM_TOOLS; i++) {
+        if (!g_tb.tool_btns[i]) continue;
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(g_tb.tool_btns[i]),
+                                     TOOLS[i].id == tool);
+    }
+    if (g_tb.canvas)
+        snapx_canvas_set_tool(g_tb.canvas, tool);
+}
+
+void snapx_toolbar_apply_config(const SnapxConfig *config)
+{
+    if (!config) return;
+
+    g_tb.active_color = (GdkRGBA){
+        config->default_color_r, config->default_color_g,
+        config->default_color_b, config->default_color_a
+    };
+    if (g_tb.color_btn) {
+#if GTK_CHECK_VERSION(4, 10, 0)
+        gtk_color_dialog_button_set_rgba(GTK_COLOR_DIALOG_BUTTON(g_tb.color_btn),
+                                        &g_tb.active_color);
+#else
+        gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(g_tb.color_btn),
+                                    &g_tb.active_color);
+#endif
+    }
+    if (g_tb.canvas)
+        snapx_canvas_set_color(g_tb.canvas, &g_tb.active_color);
+
+    SnapxAnnotationTool tool = config->default_tool;
+    if ((unsigned)tool >= (unsigned)NUM_TOOLS)
+        tool = SNAPX_TOOL_RECT;
+    apply_tool_selection(tool);
+}
+
 GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
-                                 GtkWidget *drawing_area)
+                                 GtkWidget *drawing_area,
+                                 const SnapxConfig *config)
 {
     g_tb.canvas        = canvas;
     g_tb.drawing_area  = drawing_area;
     g_tb.active_tool   = SNAPX_TOOL_RECT;
     g_tb.active_color  = (GdkRGBA){ 0.96, 0.26, 0.26, 1.0 };
     g_tb.annot_dirty   = FALSE;
+    g_tb.color_btn     = NULL;
     memset(g_tb.tool_btns, 0, sizeof(g_tb.tool_btns));
+
+    if (config) {
+        g_tb.active_color = (GdkRGBA){
+            config->default_color_r, config->default_color_g,
+            config->default_color_b, config->default_color_a
+        };
+        if ((unsigned)config->default_tool < (unsigned)NUM_TOOLS)
+            g_tb.active_tool = config->default_tool;
+    }
 
     GtkWidget *bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
     gtk_widget_add_css_class(bar, "snapx-toolbar");
@@ -286,8 +337,16 @@ GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
 #endif
         g_tb.tool_btns[i] = btn;
     }
-    /* Activate first tool */
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(g_tb.tool_btns[0]), TRUE);
+    {
+        int active_idx = 0;
+        for (int i = 0; i < NUM_TOOLS; i++) {
+            if (TOOLS[i].id == g_tb.active_tool) {
+                active_idx = i;
+                break;
+            }
+        }
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(g_tb.tool_btns[active_idx]), TRUE);
+    }
 
     /* ── Separator ───────────────────────────────────────────────────────── */
     GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
@@ -316,6 +375,7 @@ GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
     g_signal_connect(color_btn, "color-set", G_CALLBACK(on_color_notify), NULL);
 #endif
     gtk_widget_set_tooltip_text(color_btn, "Annotation color");
+    g_tb.color_btn = color_btn;
 #ifdef SNAPX_USE_GTK4
     gtk_box_append(GTK_BOX(bar), color_btn);
 #else

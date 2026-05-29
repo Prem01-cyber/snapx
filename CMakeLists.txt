@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(snapx VERSION 1.0.0 LANGUAGES C)
+project(snapx VERSION 1.1.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -178,6 +178,8 @@ set(SOURCES
     src/output/save.c
     src/output/clipboard.c
     src/utils/config.c
+    src/utils/pattern.c
+    src/utils/shortcut.c
     src/utils/monitor.c
     src/utils/hotkey.c
 )

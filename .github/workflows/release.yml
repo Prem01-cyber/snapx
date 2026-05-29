@@ -21,7 +21,7 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=1.0.0" >> "$GITHUB_OUTPUT"
+            echo "version=1.1.0" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install dependencies
@@ -80,7 +80,7 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=1.0.0" >> "$GITHUB_OUTPUT"
+            echo "version=1.1.0" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install Inno Setup
@@ -106,7 +106,7 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=1.0.0" >> "$GITHUB_OUTPUT"
+            echo "version=1.1.0" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install dependencies
@@ -122,8 +122,42 @@ jobs:
           name: macos
           path: packaging/macos/output/*.dmg
 
+  build-fedora-rpm:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:42
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=1.1.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install build dependencies
+        run: |
+          dnf install -y rpm-build cmake gcc git \
+            gtk4-devel cairo-devel glib2-devel gdk-pixbuf2-devel \
+            libX11-devel libXrandr-devel libXfixes-devel \
+            libpng-devel libjpeg-turbo-devel libwebp-devel \
+            pipewire-devel dbus-devel desktop-file-utils \
+            librsvg2 ImageMagick
+
+      - name: Build RPM
+        run: bash packaging/linux/build-rpm.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Upload Fedora RPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: fedora-rpm
+          path: packaging/linux/output/*.rpm
+
   release:
-    needs: [build-linux, build-windows, build-macos]
+    needs: [build-linux, build-windows, build-macos, build-fedora-rpm]
     runs-on: ubuntu-latest
     if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     steps:
@@ -141,13 +175,14 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.0.0' }}
-          name: snapx ${{ github.ref_type == 'tag' && github.ref_name || 'v1.0.0' }}
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.0' }}
+          name: snapx ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.0' }}
           body_path: CHANGELOG.md
           draft: ${{ github.event_name == 'workflow_dispatch' }}
           files: |
             artifacts/**/*.AppImage
             artifacts/**/*.tar.gz
+            artifacts/**/*.rpm
             artifacts/**/*.exe
             artifacts/**/*.dmg
         env:

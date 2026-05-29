@@ -33,6 +33,8 @@
 #include "../output/save.h"
 #include "../output/clipboard.h"
 #include "../utils/config.h"
+#include "../utils/hotkey.h"
+#include "../utils/shortcut.h"
 #include "../utils/monitor.h"
 
 #include <stdio.h>
@@ -845,6 +847,11 @@ static void after_capture(MainWindow *mw, SnapxImage *img, const char *ok_msg)
     snapx_capture_wayland_save_token(mw->backend);
     if (mw->config->auto_clipboard)
         g_idle_add(clipboard_idle_cb, mw);
+    if (mw->config->play_sound) {
+        GdkDisplay *dpy = gtk_widget_get_display(GTK_WIDGET(mw->win));
+        if (dpy)
+            gdk_display_beep(dpy);
+    }
 }
 
 static void snapx_main_sync_wayland_prefer(MainWindow *mw)
@@ -914,7 +921,7 @@ static void region_capture_desktop_done(SnapxImage *full, gpointer data)
     int n_mon = snapx_get_monitors(mw->backend, monitors, 8);
 
     SnapxRegion region = {0};
-    int ok = snapx_overlay_select_region(NULL, full, monitors, n_mon, &region);
+    int ok = snapx_overlay_select_region(NULL, full, monitors, n_mon, &mw->config->shortcuts, &region);
     if (!ok) {
         snapx_image_free(full);
         snapx_restore_window_state(mw);
@@ -1029,6 +1036,96 @@ static void on_capture_window(GtkButton *b, gpointer d)
 {
     (void)b; do_capture((MainWindow *)d, SNAPX_CAPTURE_ACTIVE_WINDOW, 0);
 }
+
+static void trigger_capture_mode(MainWindow *mw, SnapxCaptureMode mode)
+{
+    switch (mode) {
+    case SNAPX_CAPTURE_FULLSCREEN:
+        on_capture_fullscreen(NULL, mw);
+        break;
+    case SNAPX_CAPTURE_MONITOR:
+        on_capture_monitor_btn(NULL, mw);
+        break;
+    case SNAPX_CAPTURE_REGION:
+        on_capture_region(NULL, mw);
+        break;
+    case SNAPX_CAPTURE_WINDOW:
+    case SNAPX_CAPTURE_ACTIVE_WINDOW:
+        on_capture_window(NULL, mw);
+        break;
+    }
+}
+
+typedef struct {
+    SnapxHotkeyAction action;
+    MainWindow       *mw;
+} HotkeyIdleCtx;
+
+static gboolean hotkey_idle_cb(gpointer data)
+{
+    HotkeyIdleCtx *ctx = data;
+    switch (ctx->action) {
+    case SNAPX_HOTKEY_DEFAULT_MODE:
+        trigger_capture_mode(ctx->mw, ctx->mw->config->default_mode);
+        break;
+    case SNAPX_HOTKEY_CAPTURE_FULLSCREEN:
+        trigger_capture_mode(ctx->mw, SNAPX_CAPTURE_FULLSCREEN);
+        break;
+    case SNAPX_HOTKEY_CAPTURE_MONITOR:
+        trigger_capture_mode(ctx->mw, SNAPX_CAPTURE_MONITOR);
+        break;
+    case SNAPX_HOTKEY_CAPTURE_REGION:
+        trigger_capture_mode(ctx->mw, SNAPX_CAPTURE_REGION);
+        break;
+    case SNAPX_HOTKEY_CAPTURE_WINDOW:
+        trigger_capture_mode(ctx->mw, SNAPX_CAPTURE_ACTIVE_WINDOW);
+        break;
+    }
+    g_free(ctx);
+    return G_SOURCE_REMOVE;
+}
+
+static void on_global_hotkey(SnapxHotkeyAction action, gpointer user_data)
+{
+    HotkeyIdleCtx *ctx = g_new(HotkeyIdleCtx, 1);
+    ctx->action = action;
+    ctx->mw     = user_data;
+    g_idle_add(hotkey_idle_cb, ctx);
+}
+
+static void shortcut_tooltip(GtkWidget *btn, const char *action, const char *spec)
+{
+    char tip[160];
+    if (spec && spec[0])
+        snprintf(tip, sizeof(tip), "%s  (%s)", action, spec);
+    else
+        snprintf(tip, sizeof(tip), "%s", action);
+    gtk_widget_set_tooltip_text(btn, tip);
+}
+
+static void snapx_main_refresh_shortcut_tooltips(MainWindow *mw)
+{
+    if (!mw || !mw->config) return;
+    const SnapxShortcuts *sc = &mw->config->shortcuts;
+
+    shortcut_tooltip(mw->btn_fullscreen,
+                     "Capture full screen — all monitors", sc->capture_fullscreen);
+    shortcut_tooltip(mw->btn_region, "Draw a selection region", sc->capture_region);
+    shortcut_tooltip(mw->btn_monitor, "Pick a specific monitor to capture",
+                     sc->capture_monitor);
+    shortcut_tooltip(mw->btn_window, "Capture the active window", sc->capture_window);
+    shortcut_tooltip(mw->btn_fit, "Reset zoom to fit window", sc->fit);
+
+    char zoom_tip[256];
+    snprintf(zoom_tip, sizeof(zoom_tip),
+             "Current zoom.  %s / %s or Ctrl+scroll.",
+             sc->zoom_in[0] ? sc->zoom_in : "Ctrl+Plus",
+             sc->zoom_out[0] ? sc->zoom_out : "Ctrl+Minus");
+    gtk_widget_set_tooltip_text(mw->zoom_label, zoom_tip);
+}
+
+static void on_save(GtkButton *b, gpointer d);
+static void on_copy_clipboard(GtkButton *b, gpointer d);
 
 static void on_copy_clipboard(GtkButton *b, gpointer d)
 {
@@ -1147,7 +1244,12 @@ static void on_settings(GtkButton *b, gpointer d)
     char prev_save_dir[SNAPX_CONFIG_MAX_PATH];
     snprintf(prev_save_dir, sizeof(prev_save_dir), "%s", mw->config->save_dir);
     snapx_settings_dialog_show(GTK_WINDOW(mw->win), mw->config);
+    snapx_hotkey_cleanup();
+    snapx_hotkey_set_callback(on_global_hotkey, mw);
+    snapx_hotkey_init(mw->config);
     snapx_main_apply_config(mw, prev_save_dir);
+    snapx_toolbar_apply_config(mw->config);
+    snapx_main_refresh_shortcut_tooltips(mw);
 }
 
 static void on_fit(GtkButton *b, gpointer d) { (void)b; set_fit((MainWindow *)d); }
@@ -1179,24 +1281,51 @@ static gboolean on_key_pressed(GtkEventControllerKey *ctrl,
 {
     (void)ctrl; (void)keycode;
     MainWindow *mw = (MainWindow *)data;
-    gboolean ctrl_mod = (state & GDK_CONTROL_MASK) != 0;
+    const SnapxShortcuts *sc = &mw->config->shortcuts;
 
-    if (ctrl_mod && keyval == GDK_KEY_s) { on_save(NULL, mw); return TRUE; }
-    if (ctrl_mod && keyval == GDK_KEY_c) { on_copy_clipboard(NULL, mw); return TRUE; }
-    if (ctrl_mod && (keyval == GDK_KEY_z || keyval == GDK_KEY_Z) && mw->canvas) {
+    if (snapx_shortcut_match(sc->capture_fullscreen, keyval, state)) {
+        trigger_capture_mode(mw, SNAPX_CAPTURE_FULLSCREEN); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->capture_monitor, keyval, state)) {
+        trigger_capture_mode(mw, SNAPX_CAPTURE_MONITOR); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->capture_region, keyval, state)) {
+        trigger_capture_mode(mw, SNAPX_CAPTURE_REGION); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->capture_window, keyval, state)) {
+        trigger_capture_mode(mw, SNAPX_CAPTURE_ACTIVE_WINDOW); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->global_capture, keyval, state)) {
+        trigger_capture_mode(mw, mw->config->default_mode); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->save, keyval, state)) {
+        on_save(NULL, mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->copy, keyval, state)) {
+        on_copy_clipboard(NULL, mw); return TRUE;
+    }
+    if (mw->canvas && snapx_shortcut_match(sc->undo, keyval, state)) {
         snapx_canvas_undo(mw->canvas);
-        snapx_toolbar_set_canvas(mw->canvas, mw->drawing_area);  /* re-marks dirty */
+        snapx_toolbar_set_canvas(mw->canvas, mw->drawing_area);
         mw->annot_surface_valid = FALSE;
         gtk_widget_queue_draw(mw->drawing_area); return TRUE;
     }
-    if (ctrl_mod && (keyval == GDK_KEY_y || keyval == GDK_KEY_Y) && mw->canvas) {
+    if (mw->canvas && snapx_shortcut_match(sc->redo, keyval, state)) {
         snapx_canvas_redo(mw->canvas);
         mw->annot_surface_valid = FALSE;
         gtk_widget_queue_draw(mw->drawing_area); return TRUE;
     }
-    if (keyval == GDK_KEY_0 && ctrl_mod) { set_fit(mw); return TRUE; }
-    if (keyval == GDK_KEY_equal && ctrl_mod) { set_zoom(mw, mw->zoom * 1.25); return TRUE; }
-    if (keyval == GDK_KEY_minus && ctrl_mod) { set_zoom(mw, mw->zoom / 1.25); return TRUE; }
+    if (snapx_shortcut_match(sc->fit, keyval, state)) {
+        set_fit(mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->zoom_in, keyval, state)) {
+        double cur = mw->fit_mode ? mw->scaled_for_zoom : mw->zoom;
+        set_zoom(mw, cur > 0 ? cur * 1.25 : 1.25); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->zoom_out, keyval, state)) {
+        double cur = mw->fit_mode ? mw->scaled_for_zoom : mw->zoom;
+        set_zoom(mw, cur > 0 ? cur / 1.25 : 1.0 / 1.25); return TRUE;
+    }
     return FALSE;
 }
 #else
@@ -1204,20 +1333,47 @@ static gboolean on_key_press_gtk3(GtkWidget *w, GdkEventKey *ev, gpointer data)
 {
     (void)w;
     MainWindow *mw = (MainWindow *)data;
-    gboolean ctrl = (ev->state & GDK_CONTROL_MASK) != 0;
-    if (ctrl && ev->keyval == GDK_KEY_s) { on_save(NULL, mw); return TRUE; }
-    if (ctrl && ev->keyval == GDK_KEY_c) { on_copy_clipboard(NULL, mw); return TRUE; }
-    if (ctrl && (ev->keyval == GDK_KEY_z || ev->keyval == GDK_KEY_Z) && mw->canvas) {
+    const SnapxShortcuts *sc = &mw->config->shortcuts;
+
+    if (snapx_shortcut_match(sc->capture_fullscreen, ev->keyval, ev->state)) {
+        trigger_capture_mode(mw, SNAPX_CAPTURE_FULLSCREEN); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->capture_monitor, ev->keyval, ev->state)) {
+        trigger_capture_mode(mw, SNAPX_CAPTURE_MONITOR); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->capture_region, ev->keyval, ev->state)) {
+        trigger_capture_mode(mw, SNAPX_CAPTURE_REGION); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->capture_window, ev->keyval, ev->state)) {
+        trigger_capture_mode(mw, SNAPX_CAPTURE_ACTIVE_WINDOW); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->global_capture, ev->keyval, ev->state)) {
+        trigger_capture_mode(mw, mw->config->default_mode); return TRUE;
+    }
+
+    if (snapx_shortcut_match(sc->save, ev->keyval, ev->state)) {
+        on_save(NULL, mw); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->copy, ev->keyval, ev->state)) {
+        on_copy_clipboard(NULL, mw); return TRUE;
+    }
+    if (mw->canvas && snapx_shortcut_match(sc->undo, ev->keyval, ev->state)) {
         snapx_canvas_undo(mw->canvas); mw->annot_surface_valid = FALSE;
         gtk_widget_queue_draw(mw->drawing_area); return TRUE;
     }
-    if (ctrl && (ev->keyval == GDK_KEY_y || ev->keyval == GDK_KEY_Y) && mw->canvas) {
+    if (mw->canvas && snapx_shortcut_match(sc->redo, ev->keyval, ev->state)) {
         snapx_canvas_redo(mw->canvas); mw->annot_surface_valid = FALSE;
         gtk_widget_queue_draw(mw->drawing_area); return TRUE;
     }
-    if (ctrl && ev->keyval == GDK_KEY_0) { set_fit(mw); return TRUE; }
-    if (ctrl && ev->keyval == GDK_KEY_equal) { set_zoom(mw, mw->zoom * 1.25); return TRUE; }
-    if (ctrl && ev->keyval == GDK_KEY_minus) { set_zoom(mw, mw->zoom / 1.25); return TRUE; }
+    if (snapx_shortcut_match(sc->fit, ev->keyval, ev->state)) { set_fit(mw); return TRUE; }
+    if (snapx_shortcut_match(sc->zoom_in, ev->keyval, ev->state)) {
+        double cur = mw->fit_mode ? mw->scaled_for_zoom : mw->zoom;
+        set_zoom(mw, cur > 0 ? cur * 1.25 : 1.25); return TRUE;
+    }
+    if (snapx_shortcut_match(sc->zoom_out, ev->keyval, ev->state)) {
+        double cur = mw->fit_mode ? mw->scaled_for_zoom : mw->zoom;
+        set_zoom(mw, cur > 0 ? cur / 1.25 : 1.0 / 1.25); return TRUE;
+    }
     return FALSE;
 }
 #endif
@@ -1344,20 +1500,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_widget_add_css_class(mw->btn_monitor,    "snapx-capture");
     gtk_widget_add_css_class(mw->btn_window,     "snapx-capture");
 
-    gtk_widget_set_tooltip_text(mw->btn_fullscreen,
-        "Capture full screen — all monitors  (PrintScreen)");
-    gtk_widget_set_tooltip_text(mw->btn_region,
-        "Draw a selection region  (Shift+PrintScreen)");
-    gtk_widget_set_tooltip_text(mw->btn_monitor,
-        "Pick a specific monitor to capture");
-    gtk_widget_set_tooltip_text(mw->btn_window,
-        "Capture the active window  (Alt+PrintScreen)");
-    gtk_widget_set_tooltip_text(mw->btn_fit,
-        "Reset zoom to fit window  (Ctrl+0)");
-    gtk_widget_set_tooltip_text(mw->zoom_label,
-        "Current zoom level.  Ctrl+scroll or Ctrl +/- to change.");
-
-    /* All GTK versions share the same header layout */
+    /* ── Main vertical box ───────────────────────────────────────────────── */
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), mw->btn_fullscreen);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), mw->btn_region);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), mw->btn_monitor);
@@ -1384,7 +1527,7 @@ void snapx_window_main_create(GtkApplication      *app,
 #endif
 
     /* ── Annotation toolbar ──────────────────────────────────────────────── */
-    mw->toolbar_box = snapx_toolbar_create(NULL, NULL);
+    mw->toolbar_box = snapx_toolbar_create(NULL, NULL, config);
 #ifdef SNAPX_USE_GTK4
     gtk_box_append(GTK_BOX(vbox), mw->toolbar_box);
 #else
@@ -1539,15 +1682,22 @@ void snapx_window_main_create(GtkApplication      *app,
     /* ── Keyboard shortcuts ──────────────────────────────────────────────── */
 #ifdef SNAPX_USE_GTK4
     GtkEventController *key_ctrl = gtk_event_controller_key_new();
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(key_ctrl),
+                                                GTK_PHASE_CAPTURE);
     g_signal_connect(key_ctrl, "key-pressed", G_CALLBACK(on_key_pressed), mw);
     gtk_widget_add_controller(win, key_ctrl);
 #else
     g_signal_connect(win, "key-press-event", G_CALLBACK(on_key_press_gtk3), mw);
 #endif
 
+    g_signal_connect(win, "destroy", G_CALLBACK(on_win_destroy), mw);
+
+    snapx_hotkey_set_callback(on_global_hotkey, mw);
+    snapx_hotkey_init(mw->config);
+    snapx_main_refresh_shortcut_tooltips(mw);
+
     gtk_widget_set_visible(win, TRUE);
     g_idle_add(portal_parent_on_mapped, mw);
-    g_signal_connect(win, "destroy", G_CALLBACK(on_win_destroy), mw);
     set_status(mw, "Ready — click Screen, Region or Window to capture.");
 }
 

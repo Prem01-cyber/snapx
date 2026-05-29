@@ -1,5 +1,5 @@
 Name:           snapx
-Version:        1.0.0
+Version:        1.1.0
 Release:        1%{?dist}
 Summary:        Lightweight cross-platform screenshot utility
 License:        MIT
@@ -80,5 +80,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/snapx.desktop
 %{_datadir}/icons/hicolor/*/apps/snapx.*
 
 %changelog
-* %(date "+%a %b %d %Y") snapx Team <snapx@example.com> - 1.0.0-1
+* %(date "+%a %b %d %Y") snapx Team <snapx@example.com> - 1.1.0-1
+- Settings UI, capture shortcuts, filename patterns, stability fixes
+
+* Mon May 29 2026 snapx Team <snapx@example.com> - 1.0.0-1
 - Initial package release

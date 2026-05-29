@@ -14,20 +14,21 @@ snapx captures your screen, lets you select a region across multiple monitors, a
 
 ## Downloads
 
-Pre-built binaries are published on the [Releases](https://github.com/Prem01-cyber/snapx/releases/latest) page for each tagged version (e.g. **v1.0.0**).
+Pre-built binaries are published on the [Releases](https://github.com/Prem01-cyber/snapx/releases/latest) page for each tagged version (e.g. **v1.1.0**).
 
 | Platform | File | Install |
 |----------|------|---------|
-| **Linux** (x86_64) | `snapx-1.0.0-x86_64.AppImage` | `chmod +x snapx-*-x86_64.AppImage && ./snapx-*-x86_64.AppImage` |
-| **Linux** (portable) | `snapx-1.0.0-linux-x86_64.tar.gz` | Extract and run `usr/bin/snapx` |
-| **Windows** (64-bit) | `snapx-1.0.0-win64-setup.exe` | Run the installer; launch **snapx** from the Start menu |
-| **macOS** (Apple Silicon / Intel) | `snapx-1.0.0-macos.dmg` | Open the DMG and drag **snapx** to Applications |
+| **Linux** (x86_64) | `snapx-1.1.0-x86_64.AppImage` | `chmod +x snapx-*-x86_64.AppImage && ./snapx-*-x86_64.AppImage` |
+| **Linux** (portable) | `snapx-1.1.0-linux-x86_64.tar.gz` | Extract and run `usr/bin/snapx` |
+| **Fedora / RHEL** (x86_64) | `snapx-1.1.0-1.*.rpm` | `sudo dnf install ./snapx-1.1.0-1.*.rpm` |
+| **Windows** (64-bit) | `snapx-1.1.0-win64-setup.exe` | Run the installer; launch **snapx** from the Start menu |
+| **macOS** (Apple Silicon / Intel) | `snapx-1.1.0-macos.dmg` | Open the DMG and drag **snapx** to Applications |
 
 ### Linux distribution packages
 
 | Distro | Method |
 |--------|--------|
-| **Fedora / RHEL** | Build an RPM from [`packaging/linux/snapx.spec`](packaging/linux/snapx.spec): `rpmbuild -ba snapx.spec` |
+| **Fedora / RHEL** | Download the `.rpm` from [Releases](https://github.com/Prem01-cyber/snapx/releases/latest), or build locally: `./packaging/linux/build-rpm.sh` |
 | **Arch Linux** | Build from [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD) with `makepkg -si` |
 | **Flatpak** | Not yet available |
 
@@ -189,30 +190,58 @@ jpeg_quality     = 90
 auto_clipboard   = 1
 play_sound       = 1
 
-[hotkey]
-hotkey           = super+shift+s
+[shortcuts]
+global_capture   = super+shift+s
+capture_fullscreen = ctrl+shift+1
+capture_monitor  = ctrl+shift+2
+capture_region   = ctrl+shift+3
+capture_window   = ctrl+shift+4
+save             = ctrl+s
+copy             = ctrl+c
+undo             = ctrl+z
+redo             = ctrl+y
+fit              = ctrl+0
+zoom_in          = ctrl+plus
+zoom_out         = ctrl+minus
+region_confirm   = return
+region_cancel    = escape
 ```
 
 ### Filename pattern tokens
 
 | Token | Expands to |
 |-------|------------|
-| `%Y` `%m` `%d` | Year, month, day |
+| `%Y` `%m` `%d` | Year, month, day (in `%Y%m%d`, the `%d` is the day) |
 | `%H` `%M` `%S` | Hour, minute, second |
-| `%n` | Auto-increment counter (4 digits) |
+| `%n` | Auto-increment counter (4 digits: `0001`, `0002`, …) |
+| `%d` `%i` `%u` | Auto-increment counter (unpadded: `1`, `2`, …) |
+| `%03d` `%04d` … | Zero-padded counter (`001`, `0001`, …) |
 | `%%` | Literal `%` |
+
+Counters scan your save directory and pick the next free number. Examples: `image_%d` → `image_1.png`, `image_%03d` → `image_001.png`.
+
+All shortcuts can be changed in **Settings → Shortcuts** (Record button captures a key press).
 
 ---
 
-## Keyboard shortcuts
+## Keyboard shortcuts (defaults)
 
 | Shortcut | Action |
 |----------|--------|
+| `Super+Shift+S` | Global capture — uses default mode from Capture tab (X11/Windows; in-app on Wayland) |
+| `Ctrl+Shift+1` | Capture full screen |
+| `Ctrl+Shift+2` | Capture monitor |
+| `Ctrl+Shift+3` | Capture region |
+| `Ctrl+Shift+4` | Capture active window |
 | `Ctrl+S` | Save |
 | `Ctrl+C` | Copy to clipboard |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo annotation |
-| `Escape` | Cancel overlay |
-| `Enter` | Confirm region |
+| `Ctrl+0` | Fit view |
+| `Ctrl+Plus` / `Ctrl+Minus` | Zoom in / out |
+| `Escape` | Cancel region overlay |
+| `Return` | Confirm region selection |
+
+Per-mode capture shortcuts work when snapx is focused. On X11 and Windows they may also be registered globally if the key combo is not already grabbed by another app.
 
 ---
 
@@ -255,9 +284,10 @@ sudo cmake --install build   # optional
 ### Packaging locally
 
 ```bash
-./packaging/linux/build-appimage.sh 1.0.0      # Linux AppImage + tarball
-./packaging/macos/build-dmg.sh 1.0.0           # macOS only
-# Windows (MSYS2): ./packaging/windows/build-installer.sh 1.0.0
+./packaging/linux/build-appimage.sh 1.1.0      # Linux AppImage + tarball
+./packaging/linux/build-rpm.sh 1.1.0           # Fedora/RHEL RPM (on Fedora)
+./packaging/macos/build-dmg.sh 1.1.0           # macOS only
+# Windows (MSYS2): ./packaging/windows/build-installer.sh 1.1.0
 ```
 
 ---
@@ -265,8 +295,8 @@ sudo cmake --install build   # optional
 ## Releasing (maintainers)
 
 ```bash
-git tag -a v1.0.0 -m "snapx 1.0.0"
-git push origin v1.0.0
+git tag -a v1.1.0 -m "snapx 1.1.0"
+git push origin v1.1.0
 ```
 
 GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)) builds and uploads the AppImage, Windows installer, and macOS DMG to the GitHub Release.

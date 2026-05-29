@@ -12,6 +12,7 @@
 #define SNAPX_CONFIG_H
 
 #include "../capture/capture.h"
+#include "shortcut.h"
 
 #define SNAPX_CONFIG_MAX_PATH    512
 #define SNAPX_CONFIG_MAX_PATTERN 128
@@ -56,8 +57,11 @@ typedef struct {
     double              default_color_b;
     double              default_color_a;
 
-    /* Hotkey (platform string, e.g. "super+shift+s") */
+    /* Hotkey (legacy; migrated to shortcuts.global_capture) */
     char hotkey[64];
+
+    /* Keyboard shortcuts */
+    SnapxShortcuts shortcuts;
 
     /* Window state */
     int window_x, window_y;
@@ -81,7 +85,8 @@ void snapx_config_save(const SnapxConfig *config);
  *
  * Expands tokens in config->filename_pattern:
  *   %Y %m %d %H %M %S → date/time components
- *   %n → auto-incremented screenshot number
+ *   %n → auto-incremented screenshot number (4 digits, 0001…)
+ *   %d %i %u %03d … → printf-style counter (scans save directory)
  *
  * @param config  Active config.
  * @param buf     Output buffer.

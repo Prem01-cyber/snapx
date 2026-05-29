@@ -103,3 +103,39 @@ window.snapx-region-live {
   font-size: 1.1em;
   color: alpha(@theme_fg_color, 0.35);
 }
+
+/* ─── Settings dialog ────────────────────────────────────────────────────── */
+
+window.snapx-settings {
+  min-width: 36em;
+}
+
+.snapx-settings-section {
+  font-size: 0.95em;
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+window.snapx-settings label.dim-label {
+  font-size: 0.85em;
+  color: alpha(@theme_fg_color, 0.65);
+}
+
+window.snapx-settings entry.snapx-shortcut-entry {
+  font-family: monospace;
+  font-size: 0.92em;
+}
+
+window.snapx-settings entry.snapx-recording {
+  border: 2px solid @accent_bg_color;
+  background-color: alpha(@accent_bg_color, 0.08);
+}
+
+window.snapx-settings notebook {
+  margin-bottom: 4px;
+}
+
+window.snapx-settings label.error {
+  color: @destructive_color;
+  margin-top: 4px;
+}

@@ -13,6 +13,7 @@
  */
 
 #include "overlay.h"
+#include "../utils/shortcut.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -105,6 +106,8 @@ typedef struct {
     const SnapxImage *background;
     cairo_surface_t  *bg_surf;
     guint             logged_slice_mask;
+
+    const SnapxShortcuts *shortcuts;
 } RegionState;
 
 /** Per-window draw context (GTK4); avoids GINT_TO_POINTER(0) == NULL. */
@@ -704,6 +707,24 @@ static void region_confirm(RegionState *st)
     g_main_loop_quit(st->loop);
 }
 
+static gboolean region_key_cancel(const RegionState *st, guint kv, GdkModifierType mod)
+{
+#if !defined(SNAPX_HEADLESS) && (defined(SNAPX_USE_GTK4) || defined(SNAPX_USE_GTK3))
+    if (st->shortcuts && st->shortcuts->region_cancel[0])
+        return snapx_shortcut_match(st->shortcuts->region_cancel, kv, mod);
+#endif
+    return kv == GDK_KEY_Escape;
+}
+
+static gboolean region_key_confirm(const RegionState *st, guint kv, GdkModifierType mod)
+{
+#if !defined(SNAPX_HEADLESS) && (defined(SNAPX_USE_GTK4) || defined(SNAPX_USE_GTK3))
+    if (st->shortcuts && st->shortcuts->region_confirm[0])
+        return snapx_shortcut_match(st->shortcuts->region_confirm, kv, mod);
+#endif
+    return kv == GDK_KEY_Return || kv == GDK_KEY_KP_Enter;
+}
+
 /* ── Input event handlers ────────────────────────────────────────────────── */
 
 #ifdef SNAPX_USE_GTK4
@@ -779,15 +800,15 @@ static void reg_motion(GtkEventControllerMotion *c, double x, double y, gpointer
 static gboolean reg_key(GtkEventControllerKey *c, guint kv, guint kc,
                           GdkModifierType mod, gpointer d)
 {
-    (void)c; (void)kc; (void)mod;
+    (void)c; (void)kc;
     RegionState *st = d;
-    if (kv == GDK_KEY_Escape) {
+    if (region_key_cancel(st, kv, mod)) {
         st->confirmed = FALSE;
         region_close_all(st);
         g_main_loop_quit(st->loop);
         return TRUE;
     }
-    if ((kv == GDK_KEY_Return || kv == GDK_KEY_space) && st->pressing) {
+    if (st->pressing && region_key_confirm(st, kv, mod)) {
         region_confirm(st);
         return TRUE;
     }
@@ -870,13 +891,13 @@ static gboolean reg_kp(GtkWidget *w, GdkEventKey *e, gpointer d)
 {
     (void)w;
     RegionState *st = d;
-    if (e->keyval == GDK_KEY_Escape) {
+    if (region_key_cancel(st, e->keyval, e->state)) {
         st->confirmed = FALSE;
         region_close_all(st);
         g_main_loop_quit(st->loop);
         return TRUE;
     }
-    if ((e->keyval == GDK_KEY_Return || e->keyval == GDK_KEY_space) && st->pressing) {
+    if (st->pressing && region_key_confirm(st, e->keyval, e->state)) {
         region_confirm(st);
         return TRUE;
     }
@@ -1081,11 +1102,13 @@ int snapx_overlay_select_region(GtkWindow              *parent,
                                   const SnapxImage       *background,
                                   const SnapxMonitorInfo *monitors,
                                   int                     n_monitors,
+                                  const SnapxShortcuts   *shortcuts,
                                   SnapxRegion            *region)
 {
     RegionState st = {0};
     st.loop       = g_main_loop_new(NULL, FALSE);
     st.background = background;
+    st.shortcuts  = shortcuts;
     (void)parent;
     if (background)
         st.bg_surf = image_to_cairo(background);

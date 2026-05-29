@@ -1,13 +1,10 @@
 /**
  * @file config.c
  * @brief Read/write config.ini for persistent application settings.
- *
- * Simple hand-written INI parser — no external dependency.
- * Supports sections [section] and key=value pairs.
- * Comments start with # or ;.
  */
 
 #include "config.h"
+#include "pattern.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,7 +38,6 @@ void snapx_config_get_dir(char *buf, size_t bufsz)
     if (!home) home = "/tmp";
     snprintf(buf, bufsz, "%s/Library/Application Support/snapx", home);
 #else
-    /* Linux: prefer XDG_CONFIG_HOME */
     const char *xdg = getenv("XDG_CONFIG_HOME");
     if (xdg && xdg[0] != '\0') {
         snprintf(buf, bufsz, "%s/snapx", xdg);
@@ -55,7 +51,6 @@ void snapx_config_get_dir(char *buf, size_t bufsz)
 
 static void get_config_path(char *buf, size_t bufsz)
 {
-    /* Use a larger intermediate buffer so the path + "/config.ini" fits */
     char dir[SNAPX_CONFIG_MAX_PATH - 32];
     snapx_config_get_dir(dir, sizeof(dir));
 #ifdef SNAPX_PLATFORM_WINDOWS
@@ -76,7 +71,6 @@ static void get_default_save_dir(char *buf, size_t bufsz)
     if (!home) home = "/tmp";
     snprintf(buf, bufsz, "%s/Pictures/Screenshots", home);
 #else
-    /* Try $XDG_PICTURES_DIR first */
     const char *xdg_pics = getenv("XDG_PICTURES_DIR");
     if (xdg_pics && xdg_pics[0] != '\0') {
         snprintf(buf, bufsz, "%s/Screenshots", xdg_pics);
@@ -88,8 +82,6 @@ static void get_default_save_dir(char *buf, size_t bufsz)
 #endif
 }
 
-/* ─── Defaults ───────────────────────────────────────────────────────────── */
-
 static void apply_defaults(SnapxConfig *c)
 {
     get_default_save_dir(c->save_dir, sizeof(c->save_dir));
@@ -98,7 +90,7 @@ static void apply_defaults(SnapxConfig *c)
     c->default_mode    = SNAPX_CAPTURE_FULLSCREEN;
     c->default_delay   = 0;
     c->show_cursor     = 0;
-    c->wayland_capture_prefer = 0;  /* screenshot (default) */
+    c->wayland_capture_prefer = 0;
     c->default_format  = SNAPX_FORMAT_PNG;
     c->jpeg_quality    = 90;
     c->auto_clipboard  = 1;
@@ -108,20 +100,17 @@ static void apply_defaults(SnapxConfig *c)
     c->default_color_g = 0.2;
     c->default_color_b = 0.2;
     c->default_color_a = 1.0;
-    snprintf(c->hotkey, sizeof(c->hotkey), "super+shift+s");
+    snapx_shortcuts_set_defaults(&c->shortcuts);
+    snprintf(c->hotkey, sizeof(c->hotkey), "%s", c->shortcuts.global_capture);
     c->window_x = 100; c->window_y = 100;
     c->window_w = 960; c->window_h = 640;
 }
 
-/* ─── Tiny INI parser ────────────────────────────────────────────────────── */
-
 static void trim(char *s)
 {
-    /* Leading whitespace */
     char *p = s;
     while (*p == ' ' || *p == '\t') p++;
     if (p != s) memmove(s, p, strlen(p) + 1);
-    /* Trailing whitespace */
     size_t l = strlen(s);
     while (l > 0 && (s[l-1] == ' ' || s[l-1] == '\t' ||
                      s[l-1] == '\r' || s[l-1] == '\n')) s[--l] = '\0';
@@ -130,10 +119,25 @@ static void trim(char *s)
 static void parse_ini(FILE *fp, SnapxConfig *c)
 {
     char line[512];
+    char section[64] = "";
+    int shortcuts_section_seen = 0;
+
     while (fgets(line, sizeof(line), fp)) {
         trim(line);
-        if (line[0] == '#' || line[0] == ';' || line[0] == '[' || line[0] == '\0')
+        if (line[0] == '#' || line[0] == ';' || line[0] == '\0')
             continue;
+
+        if (line[0] == '[') {
+            char *end = strchr(line, ']');
+            if (end) {
+                *end = '\0';
+                snprintf(section, sizeof(section), "%.63s", line + 1);
+                trim(section);
+                if (strcmp(section, "shortcuts") == 0)
+                    shortcuts_section_seen = 1;
+            }
+            continue;
+        }
 
         char *eq = strchr(line, '=');
         if (!eq) continue;
@@ -141,16 +145,31 @@ static void parse_ini(FILE *fp, SnapxConfig *c)
         char *key = line; trim(key);
         char *val = eq + 1; trim(val);
 
+        if (strcmp(section, "shortcuts") == 0) {
+            if      (strcmp(key, "global_capture") == 0) snprintf(c->shortcuts.global_capture, sizeof(c->shortcuts.global_capture), "%s", val);
+            else if (strcmp(key, "capture_fullscreen") == 0) snprintf(c->shortcuts.capture_fullscreen, sizeof(c->shortcuts.capture_fullscreen), "%s", val);
+            else if (strcmp(key, "capture_monitor") == 0) snprintf(c->shortcuts.capture_monitor, sizeof(c->shortcuts.capture_monitor), "%s", val);
+            else if (strcmp(key, "capture_region") == 0) snprintf(c->shortcuts.capture_region, sizeof(c->shortcuts.capture_region), "%s", val);
+            else if (strcmp(key, "capture_window") == 0) snprintf(c->shortcuts.capture_window, sizeof(c->shortcuts.capture_window), "%s", val);
+            else if (strcmp(key, "save") == 0) snprintf(c->shortcuts.save, sizeof(c->shortcuts.save), "%s", val);
+            else if (strcmp(key, "copy") == 0) snprintf(c->shortcuts.copy, sizeof(c->shortcuts.copy), "%s", val);
+            else if (strcmp(key, "undo") == 0) snprintf(c->shortcuts.undo, sizeof(c->shortcuts.undo), "%s", val);
+            else if (strcmp(key, "redo") == 0) snprintf(c->shortcuts.redo, sizeof(c->shortcuts.redo), "%s", val);
+            else if (strcmp(key, "fit") == 0) snprintf(c->shortcuts.fit, sizeof(c->shortcuts.fit), "%s", val);
+            else if (strcmp(key, "zoom_in") == 0) snprintf(c->shortcuts.zoom_in, sizeof(c->shortcuts.zoom_in), "%s", val);
+            else if (strcmp(key, "zoom_out") == 0) snprintf(c->shortcuts.zoom_out, sizeof(c->shortcuts.zoom_out), "%s", val);
+            else if (strcmp(key, "region_confirm") == 0) snprintf(c->shortcuts.region_confirm, sizeof(c->shortcuts.region_confirm), "%s", val);
+            else if (strcmp(key, "region_cancel") == 0) snprintf(c->shortcuts.region_cancel, sizeof(c->shortcuts.region_cancel), "%s", val);
+            continue;
+        }
+
         if      (strcmp(key, "save_dir")          == 0) snprintf(c->save_dir, sizeof(c->save_dir), "%s", val);
         else if (strcmp(key, "filename_pattern")   == 0) snprintf(c->filename_pattern, sizeof(c->filename_pattern), "%s", val);
         else if (strcmp(key, "default_mode")       == 0) c->default_mode    = (SnapxCaptureMode)atoi(val);
         else if (strcmp(key, "default_delay")      == 0) c->default_delay   = atoi(val);
         else if (strcmp(key, "show_cursor")        == 0) c->show_cursor     = atoi(val);
         else if (strcmp(key, "wayland_capture_prefer") == 0) {
-            if (strcmp(val, "screencast") == 0)
-                c->wayland_capture_prefer = 1;
-            else
-                c->wayland_capture_prefer = 0;  /* screenshot (default) */
+            c->wayland_capture_prefer = (strcmp(val, "screencast") == 0) ? 1 : 0;
         }
         else if (strcmp(key, "default_format")     == 0) c->default_format  = (SnapxOutputFormat)atoi(val);
         else if (strcmp(key, "jpeg_quality")       == 0) c->jpeg_quality    = atoi(val);
@@ -167,9 +186,12 @@ static void parse_ini(FILE *fp, SnapxConfig *c)
         else if (strcmp(key, "window_w")           == 0) c->window_w = atoi(val);
         else if (strcmp(key, "window_h")           == 0) c->window_h = atoi(val);
     }
-}
 
-/* ─── Public API ─────────────────────────────────────────────────────────── */
+    if (!shortcuts_section_seen && c->hotkey[0])
+        snprintf(c->shortcuts.global_capture, sizeof(c->shortcuts.global_capture),
+                 "%s", c->hotkey);
+    snprintf(c->hotkey, sizeof(c->hotkey), "%s", c->shortcuts.global_capture);
+}
 
 void snapx_config_load(SnapxConfig *config)
 {
@@ -181,7 +203,7 @@ void snapx_config_load(SnapxConfig *config)
     get_config_path(path, sizeof(path));
 
     FILE *fp = fopen(path, "r");
-    if (!fp) return;  /* First run: use defaults */
+    if (!fp) return;
     parse_ini(fp, config);
     fclose(fp);
 }
@@ -190,7 +212,6 @@ void snapx_config_save(const SnapxConfig *config)
 {
     if (!config) return;
 
-    /* Ensure directory exists */
     char dir[SNAPX_CONFIG_MAX_PATH];
     snapx_config_get_dir(dir, sizeof(dir));
     MKDIR(dir);
@@ -226,8 +247,21 @@ void snapx_config_save(const SnapxConfig *config)
     fprintf(fp, "default_color_g  = %.4f\n", config->default_color_g);
     fprintf(fp, "default_color_b  = %.4f\n", config->default_color_b);
     fprintf(fp, "default_color_a  = %.4f\n", config->default_color_a);
-    fprintf(fp, "\n[hotkey]\n");
-    fprintf(fp, "hotkey           = %s\n", config->hotkey);
+    fprintf(fp, "\n[shortcuts]\n");
+    fprintf(fp, "global_capture   = %s\n", config->shortcuts.global_capture);
+    fprintf(fp, "capture_fullscreen = %s\n", config->shortcuts.capture_fullscreen);
+    fprintf(fp, "capture_monitor  = %s\n", config->shortcuts.capture_monitor);
+    fprintf(fp, "capture_region   = %s\n", config->shortcuts.capture_region);
+    fprintf(fp, "capture_window   = %s\n", config->shortcuts.capture_window);
+    fprintf(fp, "save             = %s\n", config->shortcuts.save);
+    fprintf(fp, "copy             = %s\n", config->shortcuts.copy);
+    fprintf(fp, "undo             = %s\n", config->shortcuts.undo);
+    fprintf(fp, "redo             = %s\n", config->shortcuts.redo);
+    fprintf(fp, "fit              = %s\n", config->shortcuts.fit);
+    fprintf(fp, "zoom_in          = %s\n", config->shortcuts.zoom_in);
+    fprintf(fp, "zoom_out         = %s\n", config->shortcuts.zoom_out);
+    fprintf(fp, "region_confirm   = %s\n", config->shortcuts.region_confirm);
+    fprintf(fp, "region_cancel    = %s\n", config->shortcuts.region_cancel);
     fprintf(fp, "\n[window]\n");
     fprintf(fp, "window_x         = %d\n", config->window_x);
     fprintf(fp, "window_y         = %d\n", config->window_y);
@@ -237,58 +271,16 @@ void snapx_config_save(const SnapxConfig *config)
     fclose(fp);
 }
 
-/* ─── Path builder with token expansion ─────────────────────────────────── */
-
 void snapx_config_build_path(const SnapxConfig *config, SnapxOutputFormat fmt,
                              char *buf, size_t bufsz)
 {
-    time_t now = time(NULL);
-    struct tm *tm = localtime(&now);
-
-    /* Expand the filename pattern */
     char fname[SNAPX_CONFIG_MAX_PATTERN * 2];
-    char *p = fname;
-    size_t rem = sizeof(fname) - 1;
-    const char *s = config->filename_pattern;
+    snapx_pattern_expand_basename(config, fmt, fname, sizeof(fname));
 
-    while (*s && rem > 0) {
-        if (*s == '%' && *(s+1)) {
-            char c = *(s+1);
-            char tmp[32] = {0};
-            switch (c) {
-                case 'Y': snprintf(tmp, sizeof(tmp), "%04d", tm->tm_year + 1900); break;
-                case 'm': snprintf(tmp, sizeof(tmp), "%02d", tm->tm_mon + 1); break;
-                case 'd': snprintf(tmp, sizeof(tmp), "%02d", tm->tm_mday); break;
-                case 'H': snprintf(tmp, sizeof(tmp), "%02d", tm->tm_hour); break;
-                case 'M': snprintf(tmp, sizeof(tmp), "%02d", tm->tm_min); break;
-                case 'S': snprintf(tmp, sizeof(tmp), "%02d", tm->tm_sec); break;
-                case 'n': {
-                    /* Auto-increment: scan save_dir for existing files */
-                    static int counter = 1;
-                    snprintf(tmp, sizeof(tmp), "%04d", counter++);
-                    break;
-                }
-                case '%': snprintf(tmp, sizeof(tmp), "%%"); break;
-                default:
-                    tmp[0] = '%'; tmp[1] = c; tmp[2] = '\0'; break;
-            }
-            size_t tl = strlen(tmp);
-            if (tl > rem) tl = rem;
-            memcpy(p, tmp, tl);
-            p += tl; rem -= tl;
-            s += 2;
-        } else {
-            *p++ = *s++; rem--;
-        }
-    }
-    *p = '\0';
-
-    /* Determine extension from requested output format */
     const char *ext = ".png";
     if      (fmt == SNAPX_FORMAT_JPEG) ext = ".jpg";
     else if (fmt == SNAPX_FORMAT_WEBP) ext = ".webp";
 
-    /* Combine dir + filename + extension */
 #ifdef SNAPX_PLATFORM_WINDOWS
     snprintf(buf, bufsz, "%s\\%s%s", config->save_dir, fname, ext);
 #else

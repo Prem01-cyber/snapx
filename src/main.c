@@ -286,8 +286,7 @@ int main(int argc, char **argv)
         snapx_capture_wayland_set_capture_prefer(&g_app.backend,
             g_app.config.wayland_capture_prefer);
 
-    /* Register global hotkey (best-effort) */
-    snapx_hotkey_init(&g_app.config);
+    /* Global hotkeys registered when the main window is created. */
 
     /* Headless path */
     if (g_app.cli.no_gui) {

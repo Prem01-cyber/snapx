@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Build Fedora/RHEL RPM from snapx.spec.
+# Usage: ./packaging/linux/build-rpm.sh [version]
+# Run on Fedora with: dnf install rpm-build cmake gcc gtk4-devel ...
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+VERSION="${1:-$(grep -m1 'project(snapx VERSION' "${ROOT}/CMakeLists.txt" | sed 's/.*VERSION \([0-9.]*\).*/\1/')}"
+OUT="${ROOT}/packaging/linux/output"
+SPEC="${ROOT}/packaging/linux/snapx.spec"
+TARBALL="snapx-${VERSION}.tar.gz"
+
+cd "$ROOT"
+"${ROOT}/packaging/icons/generate-icons.sh" 2>/dev/null || true
+
+mkdir -p "${OUT}"
+rm -f "${OUT}/"*.rpm 2>/dev/null || true
+
+# Source tarball for rpmbuild (%autosetup expects snapx-VERSION/)
+git archive --format=tar.gz --prefix="snapx-${VERSION}/" \
+    -o "/tmp/${TARBALL}" HEAD
+
+mkdir -p "${HOME}/rpmbuild"/{SOURCES,SPECS,BUILD,RPMS,SRPMS}
+cp "/tmp/${TARBALL}" "${HOME}/rpmbuild/SOURCES/"
+cp "${SPEC}" "${HOME}/rpmbuild/SPECS/snapx.spec"
+
+rpmbuild -ba "${HOME}/rpmbuild/SPECS/snapx.spec"
+
+find "${HOME}/rpmbuild/RPMS" -name "*.rpm" -exec cp {} "${OUT}/" \;
+
+echo "Built RPM(s) in ${OUT}:"
+ls -la "${OUT}/"*.rpm

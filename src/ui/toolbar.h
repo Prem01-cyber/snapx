@@ -13,6 +13,7 @@
 #endif
 
 #include "../annotation/canvas.h"
+#include "../utils/config.h"
 
 /**
  * @brief Create the annotation toolbar widget.
@@ -22,7 +23,13 @@
  * @return A GtkBox widget containing the toolbar.
  */
 GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
-                                 GtkWidget *drawing_area);
+                                 GtkWidget *drawing_area,
+                                 const SnapxConfig *config);
+
+/**
+ * @brief Apply default tool/color from config (e.g. after settings change).
+ */
+void snapx_toolbar_apply_config(const SnapxConfig *config);
 
 /**
  * @brief Connect mouse/gesture events on @p drawing_area to the annotation

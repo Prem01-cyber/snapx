@@ -11,6 +11,7 @@
 #endif
 
 #include "../capture/capture.h"
+#include "../utils/shortcut.h"
 
 /** @brief Selected rectangular region in virtual-desktop pixel coordinates. */
 typedef struct {
@@ -38,6 +39,7 @@ typedef struct {
  * @param background  Optional freeze-frame for overlay only, or NULL.
  * @param monitors    Monitor layout from snapx_get_monitors (may be NULL).
  * @param n_monitors  Number of entries in @p monitors (0 if NULL).
+ * @param shortcuts   Keyboard shortcuts (may be NULL for defaults).
  * @param region      Output: selected rectangle in virtual-desktop coordinates.
  * @return 1 if a region was confirmed, 0 if cancelled.
  */
@@ -45,6 +47,7 @@ int snapx_overlay_select_region(GtkWindow              *parent,
                                   const SnapxImage       *background,
                                   const SnapxMonitorInfo *monitors,
                                   int                     n_monitors,
+                                  const SnapxShortcuts   *shortcuts,
                                   SnapxRegion            *region);
 
 /**

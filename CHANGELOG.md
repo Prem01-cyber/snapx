@@ -5,6 +5,32 @@ All notable changes to snapx are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-05-29
+
+### Added
+
+- Configurable keyboard shortcuts in Settings (capture, editor, region overlay)
+- Per-mode capture shortcuts: full screen, monitor, region, window (defaults `Ctrl+Shift+1`–`4`)
+- Filename pattern tokens: `%d`, `%03d`, `%n`, date/time tokens with live preview
+- Annotation defaults in Settings (default tool and color applied to toolbar)
+- Multi-action global hotkeys on X11 and Windows
+- Fedora/RHEL RPM build script ([`packaging/linux/build-rpm.sh`](packaging/linux/build-rpm.sh))
+
+### Changed
+
+- Settings dialog UI: scrolled tabs, shortcut sections, Record/Clear/Reset controls
+- In-app shortcuts use capture-phase key handler (works when canvas/toolbar focused)
+- Header button tooltips reflect configured shortcut keys
+
+### Fixed
+
+- GtkShortcutController trigger use-after-free (`GTK_IS_SHORTCUT_TRIGGER` CRITICAL)
+- Wayland multi-monitor region overlay GdkMonitor stability
+- Global hotkey callback registration (was never wired)
+- Play sound on capture now uses system beep when enabled
+
+[1.1.0]: https://github.com/Prem01-cyber/snapx/releases/tag/v1.1.0
+
 ## [1.0.0] - 2026-05-29
 
 ### Added
