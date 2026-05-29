@@ -17,11 +17,18 @@ mkdir -p "${OUT}"
 rm -f "${OUT}/"*.rpm 2>/dev/null || true
 
 # Source tarball for rpmbuild (%autosetup expects snapx-VERSION/)
-git archive --format=tar.gz --prefix="snapx-${VERSION}/" \
-    -o "/tmp/${TARBALL}" HEAD
+TARBALL_PATH="/tmp/${TARBALL}"
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$ROOT" archive --format=tar.gz --prefix="snapx-${VERSION}/" \
+        -o "$TARBALL_PATH" HEAD
+else
+    tar -C "$ROOT" -czf "$TARBALL_PATH" \
+        --exclude='.git' --exclude='build' --exclude='dist' \
+        --transform="s,^,snapx-${VERSION}/," .
+fi
 
 mkdir -p "${HOME}/rpmbuild"/{SOURCES,SPECS,BUILD,RPMS,SRPMS}
-cp "/tmp/${TARBALL}" "${HOME}/rpmbuild/SOURCES/"
+cp "$TARBALL_PATH" "${HOME}/rpmbuild/SOURCES/"
 cp "${SPEC}" "${HOME}/rpmbuild/SPECS/snapx.spec"
 
 rpmbuild -ba "${HOME}/rpmbuild/SPECS/snapx.spec"

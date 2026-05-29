@@ -72,7 +72,7 @@ jobs:
             mingw-w64-ucrt-x86_64-libjpeg-turbo
             mingw-w64-ucrt-x86_64-libwebp
             mingw-w64-ucrt-x86_64-dbus
-            imagemagick
+            mingw-w64-ucrt-x86_64-librsvg
 
       - name: Resolve version
         id: ver

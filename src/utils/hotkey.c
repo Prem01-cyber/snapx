@@ -33,15 +33,6 @@ void snapx_hotkey_set_callback(SnapxHotkeyCallback cb, gpointer user_data)
     g_hotkey_user_data  = user_data;
 }
 
-static int grab_spec_dup(const HotkeyGrab *grabs, int n, int kc, unsigned mods)
-{
-    for (int i = 0; i < n; i++) {
-        if (grabs[i].keycode == kc && grabs[i].modifiers == mods)
-            return 1;
-    }
-    return 0;
-}
-
 /* ─────────────────────────────────── Linux X11 ──────────────────────────── */
 #if defined(SNAPX_PLATFORM_LINUX) && defined(SNAPX_HAVE_X11)
 
@@ -128,6 +119,15 @@ static void *x11_hotkey_thread(void *arg)
         }
     }
     return NULL;
+}
+
+static int grab_spec_dup(const HotkeyGrab *grabs, int n, int kc, unsigned mods)
+{
+    for (int i = 0; i < n; i++) {
+        if (grabs[i].keycode == kc && grabs[i].modifiers == mods)
+            return 1;
+    }
+    return 0;
 }
 
 static int x11_add_grab(Display *dpy, const char *spec, SnapxHotkeyAction action)

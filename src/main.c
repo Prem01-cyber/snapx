@@ -298,8 +298,13 @@ int main(int argc, char **argv)
 
     /* GUI path */
 #ifndef SNAPX_HEADLESS
+#if GLIB_CHECK_VERSION(2, 74, 0)
     GtkApplication *gapp = gtk_application_new("io.github.snapx",
                                                G_APPLICATION_DEFAULT_FLAGS);
+#else
+    GtkApplication *gapp = gtk_application_new("io.github.snapx",
+                                               G_APPLICATION_FLAGS_NONE);
+#endif
     g_signal_connect(gapp, "activate", G_CALLBACK(on_activate), &g_app);
     int status = g_application_run(G_APPLICATION(gapp), argc, argv);
     g_object_unref(gapp);
