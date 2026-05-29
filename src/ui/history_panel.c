@@ -16,6 +16,7 @@ typedef struct {
     SnapxHistorySelectFn on_select;
     gpointer             userdata;
     GtkWidget           *list;
+    GtkWidget           *empty_label;
     char                *paths[64];
     int                  n_paths;
 } HistoryPanel;
@@ -47,6 +48,54 @@ static void on_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer data)
         hp->on_select(hp->paths[idx], hp->userdata);
 }
 
+static GtkWidget *history_row_new(const char *path)
+{
+    GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_add_css_class(row_box, "snapx-history-row");
+    gtk_widget_set_margin_start(row_box, 8);
+    gtk_widget_set_margin_end(row_box, 8);
+    gtk_widget_set_margin_top(row_box, 6);
+    gtk_widget_set_margin_bottom(row_box, 6);
+
+    GtkWidget *thumb;
+#ifdef SNAPX_USE_GTK4
+    thumb = gtk_picture_new_for_filename(path);
+    if (!thumb) {
+        thumb = gtk_label_new("?");
+        gtk_widget_set_size_request(thumb, 72, 72);
+    } else {
+        gtk_picture_set_can_shrink(GTK_PICTURE(thumb), TRUE);
+        gtk_picture_set_content_fit(GTK_PICTURE(thumb), GTK_CONTENT_FIT_COVER);
+        gtk_widget_set_size_request(thumb, 72, 72);
+        gtk_widget_add_css_class(thumb, "snapx-history-thumb");
+    }
+#else
+    GError *err = NULL;
+    GdkPixbuf *pb = gdk_pixbuf_new_from_file_at_scale(path, 72, 72, TRUE, &err);
+    if (pb) {
+        thumb = gtk_image_new_from_pixbuf(pb);
+        g_object_unref(pb);
+        gtk_widget_set_size_request(thumb, 72, 72);
+        gtk_widget_add_css_class(thumb, "snapx-history-thumb");
+    } else {
+        if (err) g_error_free(err);
+        thumb = gtk_label_new("?");
+        gtk_widget_set_size_request(thumb, 72, 72);
+    }
+#endif
+
+    const char *base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+    GtkWidget *lbl = gtk_label_new(base);
+    gtk_label_set_xalign(GTK_LABEL(lbl), 0.5f);
+    gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_MIDDLE);
+    gtk_widget_add_css_class(lbl, "snapx-history-name");
+
+    gtk_box_append(GTK_BOX(row_box), thumb);
+    gtk_box_append(GTK_BOX(row_box), lbl);
+    return row_box;
+}
+
 GtkWidget *snapx_history_panel_new(const SnapxConfig *config,
                                       SnapxHistorySelectFn on_select,
                                       gpointer userdata)
@@ -55,20 +104,46 @@ GtkWidget *snapx_history_panel_new(const SnapxConfig *config,
     hp->on_select = on_select;
     hp->userdata  = userdata;
 
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_add_css_class(outer, "snapx-history");
+
     GtkWidget *title = gtk_label_new("Recent");
     gtk_widget_add_css_class(title, "snapx-settings-section");
-    gtk_box_append(GTK_BOX(box), title);
+    gtk_widget_set_halign(title, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(title, 10);
+    gtk_widget_set_margin_top(title, 8);
+    gtk_widget_set_margin_bottom(title, 4);
+    gtk_box_append(GTK_BOX(outer), title);
+
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_vexpand(scroll, TRUE);
 
     hp->list = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(hp->list), GTK_SELECTION_NONE);
-    gtk_widget_set_vexpand(hp->list, TRUE);
     g_signal_connect(hp->list, "row-activated", G_CALLBACK(on_row_activated), hp);
-    gtk_box_append(GTK_BOX(box), hp->list);
 
-    g_object_set_data(G_OBJECT(box), "snapx-history-panel", hp);
-    snapx_history_panel_refresh(box, config);
-    return box;
+    hp->empty_label = gtk_label_new("No recent saves");
+    gtk_widget_add_css_class(hp->empty_label, "dim-label");
+    gtk_widget_set_halign(hp->empty_label, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_top(hp->empty_label, 24);
+    gtk_widget_set_visible(hp->empty_label, FALSE);
+
+    GtkWidget *list_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_append(GTK_BOX(list_box), hp->list);
+    gtk_box_append(GTK_BOX(list_box), hp->empty_label);
+
+#ifdef SNAPX_USE_GTK4
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), list_box);
+#else
+    gtk_container_add(GTK_CONTAINER(scroll), list_box);
+#endif
+    gtk_box_append(GTK_BOX(outer), scroll);
+
+    g_object_set_data(G_OBJECT(outer), "snapx-history-panel", hp);
+    snapx_history_panel_refresh(outer, config);
+    return outer;
 }
 
 void snapx_history_panel_refresh(GtkWidget *panel, const SnapxConfig *config)
@@ -82,7 +157,11 @@ void snapx_history_panel_refresh(GtkWidget *panel, const SnapxConfig *config)
     history_clear_paths(hp);
 
     DIR *d = opendir(config->save_dir);
-    if (!d) return;
+    if (!d) {
+        gtk_widget_set_visible(hp->empty_label, TRUE);
+        gtk_label_set_text(GTK_LABEL(hp->empty_label), "Save folder not found");
+        return;
+    }
 
     HistItem items[64];
     int n = 0;
@@ -106,6 +185,16 @@ void snapx_history_panel_refresh(GtkWidget *panel, const SnapxConfig *config)
     }
     closedir(d);
 
+    if (n == 0) {
+        gtk_widget_set_visible(hp->empty_label, TRUE);
+        char msg[576];
+        snprintf(msg, sizeof(msg), "No recent saves in\n%s", config->save_dir);
+        gtk_label_set_text(GTK_LABEL(hp->empty_label), msg);
+        return;
+    }
+
+    gtk_widget_set_visible(hp->empty_label, FALSE);
+
     for (int i = 0; i < n - 1; i++)
         for (int j = i + 1; j < n; j++)
             if (items[j].mtime > items[i].mtime) {
@@ -116,11 +205,9 @@ void snapx_history_panel_refresh(GtkWidget *panel, const SnapxConfig *config)
 
     int show = n < 20 ? n : 20;
     for (int i = 0; i < show; i++) {
-        const char *base = strrchr(items[i].path, '/');
         hp->paths[hp->n_paths] = g_strdup(items[i].path);
-        GtkWidget *lbl = gtk_label_new(base ? base + 1 : items[i].path);
-        gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
-        gtk_list_box_append(GTK_LIST_BOX(hp->list), lbl);
+        GtkWidget *row_w = history_row_new(items[i].path);
+        gtk_list_box_append(GTK_LIST_BOX(hp->list), row_w);
         hp->n_paths++;
     }
 }

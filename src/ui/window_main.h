@@ -38,6 +38,9 @@ void snapx_window_main_set_image(SnapxImage *img);
 /** Request a single coalesced redraw of the preview/annotation canvas. */
 void snapx_main_schedule_redraw(void);
 
+/** Apply pixelate blur to the current image (image coordinates). */
+void snapx_main_apply_blur_region(double x1, double y1, double x2, double y2);
+
 /**
  * Convert drawing-area coordinates to image pixel coordinates.
  * Use before passing points to the annotation canvas.

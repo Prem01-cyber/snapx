@@ -7,6 +7,7 @@
 #define SNAPX_ANNOTATION_H
 
 #include <cairo/cairo.h>
+#include "../capture/capture.h"
 
 #ifdef SNAPX_USE_GTK4
 #  include <gtk/gtk.h>
@@ -82,5 +83,9 @@ void snapx_draw_annotation(cairo_t *cr, const SnapxAnnotation *ann);
 void snapx_draw_blur(cairo_t *cr, cairo_surface_t *surface,
                      double rx, double ry, double rw, double rh,
                      int radius);
+
+/** Pixelate a region of an RGBA SnapxImage in place. */
+void snapx_image_pixelate(SnapxImage *img, int x, int y, int w, int h,
+                          int block_size);
 
 #endif /* SNAPX_ANNOTATION_H */

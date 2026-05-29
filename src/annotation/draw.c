@@ -79,8 +79,46 @@ void snapx_draw_blur(cairo_t *cr, cairo_surface_t *surface,
         }
     }
     cairo_surface_mark_dirty(surface);
-    /* No Cairo paint needed; we modified the surface pixels directly */
     (void)cr;
+}
+
+void snapx_image_pixelate(SnapxImage *img, int x, int y, int w, int h,
+                          int block_size)
+{
+    if (!img || !img->data || w < 4 || h < 4) return;
+
+    int x0 = x, y0 = y;
+    int x1 = x + w, y1 = y + h;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > img->width)  x1 = img->width;
+    if (y1 > img->height) y1 = img->height;
+    if (x1 <= x0 || y1 <= y0) return;
+
+    int radius = block_size > 1 ? block_size : 8;
+    int stride = img->stride;
+
+    for (int by = y0; by < y1; by += radius) {
+        for (int bx = x0; bx < x1; bx += radius) {
+            long sr = 0, sg = 0, sb = 0, cnt = 0;
+            for (int py = by; py < by + radius && py < y1; py++) {
+                for (int px = bx; px < bx + radius && px < x1; px++) {
+                    const uint8_t *p = img->data + py * stride + px * 4;
+                    sr += p[0]; sg += p[1]; sb += p[2]; cnt++;
+                }
+            }
+            if (cnt == 0) continue;
+            uint8_t ar = (uint8_t)(sr / cnt);
+            uint8_t ag = (uint8_t)(sg / cnt);
+            uint8_t ab = (uint8_t)(sb / cnt);
+            for (int py = by; py < by + radius && py < y1; py++) {
+                for (int px = bx; px < bx + radius && px < x1; px++) {
+                    uint8_t *p = img->data + py * stride + px * 4;
+                    p[0] = ar; p[1] = ag; p[2] = ab; p[3] = 0xFF;
+                }
+            }
+        }
+    }
 }
 
 /* ─── Main render dispatch ───────────────────────────────────────────────── */
@@ -148,8 +186,7 @@ void snapx_draw_annotation(cairo_t *cr, const SnapxAnnotation *ann)
         }
 
         case SNAPX_TOOL_BLUR:
-            /* Blur is applied directly to surface pixels in snapx_draw_blur;
-             * nothing to paint here at render time. */
+            /* Blur mutates the base image; preview drawn in render_pending. */
             break;
 
         case SNAPX_TOOL_HIGHLIGHT: {

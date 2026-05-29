@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 
 /* ─── Canvas struct ──────────────────────────────────────────────────────── */
 
@@ -39,6 +40,9 @@ struct SnapxAnnotationCanvas {
 
     /* In-progress stroke (not yet committed) */
     SnapxAnnotation *pending;
+
+    SnapxBlurCommittedFn blur_fn;
+    gpointer            blur_ud;
 
     /* Scale: canvas coords → image coords (set if preview is scaled) */
     double scale_x;
@@ -133,6 +137,32 @@ void snapx_canvas_set_color(SnapxAnnotationCanvas *canvas, const GdkRGBA *color)
     if (canvas && color) canvas->active_color = *color;
 }
 
+void snapx_canvas_set_blur_handler(SnapxAnnotationCanvas *canvas,
+                                   SnapxBlurCommittedFn fn, gpointer userdata)
+{
+    if (!canvas) return;
+    canvas->blur_fn = fn;
+    canvas->blur_ud = userdata;
+}
+
+static void draw_blur_preview(cairo_t *cr, const SnapxAnnotation *ann)
+{
+    double x = ann->rect.x1 < ann->rect.x2 ? ann->rect.x1 : ann->rect.x2;
+    double y = ann->rect.y1 < ann->rect.y2 ? ann->rect.y1 : ann->rect.y2;
+    double w = fabs(ann->rect.x2 - ann->rect.x1);
+    double h = fabs(ann->rect.y2 - ann->rect.y1);
+    if (w < 1 || h < 1) return;
+
+    cairo_save(cr);
+    double dash[] = { 6.0, 4.0 };
+    cairo_set_dash(cr, dash, 2, 0);
+    cairo_set_source_rgba(cr, 0.25, 0.65, 1.0, 0.85);
+    cairo_set_line_width(cr, 2.0);
+    cairo_rectangle(cr, x, y, w, h);
+    cairo_stroke(cr);
+    cairo_restore(cr);
+}
+
 /* ─── Stroke lifecycle ───────────────────────────────────────────────────── */
 
 void snapx_canvas_stroke_begin(SnapxAnnotationCanvas *canvas, double x, double y)
@@ -189,6 +219,14 @@ void snapx_canvas_stroke_end(SnapxAnnotationCanvas *canvas, double x, double y)
     if (n->ann.tool == SNAPX_TOOL_CALLOUT) {
         n->ann.callout_num = canvas->callout_next++;
         snprintf(n->ann.text, sizeof(n->ann.text), "%d", n->ann.callout_num);
+    }
+
+    if (n->ann.tool == SNAPX_TOOL_BLUR) {
+        if (canvas->blur_fn)
+            canvas->blur_fn(n->ann.rect.x1, n->ann.rect.y1,
+                            n->ann.rect.x2, n->ann.rect.y2, canvas->blur_ud);
+        annnode_free(n);
+        return;
     }
 
     /* Push onto undo stack */
@@ -293,8 +331,12 @@ void snapx_canvas_render_pending(const SnapxAnnotationCanvas *canvas, cairo_t *c
     if (!canvas || !cr || !canvas->pending) return;
 
     SnapxAnnotationTool tool = canvas->pending->tool;
+    if (tool == SNAPX_TOOL_BLUR) {
+        draw_blur_preview(cr, canvas->pending);
+        return;
+    }
     if (tool == SNAPX_TOOL_RECT || tool == SNAPX_TOOL_ARROW ||
-        tool == SNAPX_TOOL_HIGHLIGHT) {
+        tool == SNAPX_TOOL_HIGHLIGHT || tool == SNAPX_TOOL_REDACT) {
         snapx_draw_annotation(cr, canvas->pending);
         return;
     }

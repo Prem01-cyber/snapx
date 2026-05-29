@@ -28,6 +28,7 @@
 #include "toolbar.h"
 #include "settings_dialog.h"
 #include "../annotation/canvas.h"
+#include "../annotation/annotation.h"
 #include "../capture/capture.h"
 #include "../capture/platform.h"
 #include "../output/save.h"
@@ -73,6 +74,9 @@ typedef struct {
     GtkWidget            *statusbar;
     GtkWidget            *zoom_label;    /**< Shows "100%" in the header    */
     GtkWidget            *btn_upload;
+    GtkWidget            *btn_ocr;
+    GtkWidget            *lbl_upload_status;
+    GtkWidget            *lbl_ocr_status;
 
     SnapxConfig          *config;
     SnapxCaptureBackend  *backend;
@@ -149,6 +153,9 @@ static void do_capture(MainWindow *mw, SnapxCaptureMode mode, int delay);
 static void do_upload_image(MainWindow *mw, SnapxImage *img);
 static void on_crop(MainWindow *mw);
 static void update_zoom_label(MainWindow *mw);
+static void snapx_main_bind_canvas(MainWindow *mw);
+static void snapx_main_update_workflow_ui(MainWindow *mw);
+static void on_settings(GtkButton *b, gpointer d);
 
 /* ─── CSS loading ─────────────────────────────────────────────────────────── */
 
@@ -887,6 +894,7 @@ static void after_capture(MainWindow *mw, SnapxImage *img, const char *ok_msg)
     if (mw->canvas) snapx_canvas_free(mw->canvas);
     mw->canvas = snapx_canvas_new(img->width, img->height);
     snapx_toolbar_set_canvas(mw->canvas, mw->drawing_area);
+    snapx_main_bind_canvas(mw);
 
     /* Reset to fit view */
     set_fit(mw);
@@ -1191,8 +1199,7 @@ static void upload_done_cb(int success, const char *url, const char *error, gpoi
 {
     MainWindow *mw = data;
     mw->upload_busy = 0;
-    if (mw->btn_upload)
-        gtk_widget_set_sensitive(mw->btn_upload, TRUE);
+    snapx_main_update_workflow_ui(mw);
     if (success && url) {
         if (mw->config->upload_copy_url)
             snapx_clipboard_copy_text(url);
@@ -1204,6 +1211,87 @@ static void upload_done_cb(int success, const char *url, const char *error, gpoi
         snprintf(msg, sizeof(msg), "Upload failed: %s",
                  error ? error : "unknown error");
         set_status(mw, msg);
+    }
+}
+
+static void ocr_done_cb(int success, const char *text, gpointer data)
+{
+    MainWindow *mw = data;
+    snapx_main_update_workflow_ui(mw);
+    if (success && text && text[0]) {
+        snapx_clipboard_copy_text(text);
+        set_status(mw, "Text copied from image.");
+    } else {
+        set_status(mw, text && text[0] ? text : "OCR failed.");
+    }
+}
+
+static void snapx_main_update_workflow_ui(MainWindow *mw)
+{
+    if (!mw || !mw->config) return;
+    char buf[256];
+
+    snapx_upload_status_message(mw->config, buf, sizeof(buf));
+    if (mw->lbl_upload_status) {
+        gtk_label_set_text(GTK_LABEL(mw->lbl_upload_status), buf);
+        gtk_widget_remove_css_class(mw->lbl_upload_status, "warn");
+        gtk_widget_remove_css_class(mw->lbl_upload_status, "ok");
+        if (snapx_upload_get_status(mw->config) == SNAPX_UPLOAD_STATUS_AVAILABLE)
+            gtk_widget_add_css_class(mw->lbl_upload_status, "ok");
+        else
+            gtk_widget_add_css_class(mw->lbl_upload_status, "warn");
+    }
+
+    snapx_ocr_status_message(mw->config, buf, sizeof(buf));
+    if (mw->lbl_ocr_status) {
+        gtk_label_set_text(GTK_LABEL(mw->lbl_ocr_status), buf);
+        gtk_widget_remove_css_class(mw->lbl_ocr_status, "warn");
+        gtk_widget_remove_css_class(mw->lbl_ocr_status, "ok");
+        if (snapx_ocr_get_status(mw->config) == SNAPX_OCR_STATUS_AVAILABLE)
+            gtk_widget_add_css_class(mw->lbl_ocr_status, "ok");
+        else
+            gtk_widget_add_css_class(mw->lbl_ocr_status, "warn");
+    }
+
+    if (mw->btn_upload) {
+        if (snapx_upload_busy()) {
+            gtk_button_set_label(GTK_BUTTON(mw->btn_upload), "Stop");
+            gtk_widget_set_sensitive(mw->btn_upload, TRUE);
+            gtk_widget_set_tooltip_text(mw->btn_upload,
+                                        "Cancel upload in progress");
+        } else {
+            gtk_button_set_label(GTK_BUTTON(mw->btn_upload), "Upload");
+            SnapxUploadStatus st = snapx_upload_get_status(mw->config);
+            gboolean upload_ok = st == SNAPX_UPLOAD_STATUS_AVAILABLE;
+            gtk_widget_set_sensitive(mw->btn_upload,
+                upload_ok || st == SNAPX_UPLOAD_STATUS_NOT_CONFIGURED);
+            if (st == SNAPX_UPLOAD_STATUS_NOT_BUILT)
+                gtk_widget_set_tooltip_text(mw->btn_upload,
+                    "Upload requires libcurl — rebuild with libcurl-devel");
+            else if (st == SNAPX_UPLOAD_STATUS_NOT_CONFIGURED)
+                gtk_widget_set_tooltip_text(mw->btn_upload,
+                    "Configure upload in Settings (click to open)");
+            else
+                gtk_widget_set_tooltip_text(mw->btn_upload,
+                    "Upload and copy link  (Ctrl+U)");
+        }
+    }
+
+    if (mw->btn_ocr) {
+        if (snapx_ocr_busy()) {
+            gtk_button_set_label(GTK_BUTTON(mw->btn_ocr), "Stop");
+            gtk_widget_set_sensitive(mw->btn_ocr, TRUE);
+            gtk_widget_set_tooltip_text(mw->btn_ocr,
+                                        "Cancel OCR (result will be ignored)");
+        } else {
+            gtk_button_set_label(GTK_BUTTON(mw->btn_ocr), "Copy text");
+            gboolean ok = snapx_ocr_get_status(mw->config) ==
+                          SNAPX_OCR_STATUS_AVAILABLE;
+            gtk_widget_set_sensitive(mw->btn_ocr, ok);
+            gtk_widget_set_tooltip_text(mw->btn_ocr, ok
+                ? "Copy text from image (OCR)  (Ctrl+Shift+T)"
+                : "OCR requires Tesseract — rebuild with tesseract-devel");
+        }
     }
 }
 
@@ -1226,8 +1314,7 @@ static void do_upload_image(MainWindow *mw, SnapxImage *img)
         return;
     }
     mw->upload_busy = 1;
-    if (mw->btn_upload)
-        gtk_widget_set_sensitive(mw->btn_upload, FALSE);
+    snapx_main_update_workflow_ui(mw);
     snapx_upload_async(&enc, mw->config, upload_done_cb, mw);
 }
 
@@ -1235,6 +1322,25 @@ static void on_upload(GtkButton *b, gpointer d)
 {
     (void)b;
     MainWindow *mw = (MainWindow *)d;
+
+    if (snapx_upload_busy()) {
+        snapx_upload_cancel();
+        mw->upload_busy = 0;
+        snapx_main_update_workflow_ui(mw);
+        set_status(mw, "Upload cancelled.");
+        return;
+    }
+
+    SnapxUploadStatus st = snapx_upload_get_status(mw->config);
+    if (st == SNAPX_UPLOAD_STATUS_NOT_CONFIGURED) {
+        on_settings(NULL, mw);
+        set_status(mw, "Configure upload service in Settings → Output.");
+        return;
+    }
+    if (st == SNAPX_UPLOAD_STATUS_NOT_BUILT) {
+        set_status(mw, "Upload not built in — install libcurl-devel and rebuild.");
+        return;
+    }
     if (!mw->current_image) { set_status(mw, "Nothing to upload."); return; }
     SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
     do_upload_image(mw, flat ? flat : mw->current_image);
@@ -1245,16 +1351,25 @@ static void on_ocr(GtkButton *b, gpointer d)
 {
     (void)b;
     MainWindow *mw = (MainWindow *)d;
-    if (!mw->current_image) { set_status(mw, "Nothing to OCR."); return; }
-    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
-    char text[SNAPX_OCR_MAX];
-    if (snapx_ocr_image(flat ? flat : mw->current_image, mw->config->ocr_lang,
-                        text, sizeof(text)) == 0) {
-        snapx_clipboard_copy_text(text);
-        set_status(mw, "Text copied from image.");
-    } else {
-        set_status(mw, text);
+
+    if (snapx_ocr_busy()) {
+        snapx_ocr_cancel();
+        snapx_main_update_workflow_ui(mw);
+        set_status(mw, "OCR cancelled.");
+        return;
     }
+
+    if (snapx_ocr_get_status(mw->config) != SNAPX_OCR_STATUS_AVAILABLE) {
+        set_status(mw, "OCR not built in — install tesseract-devel and rebuild.");
+        return;
+    }
+    if (!mw->current_image) { set_status(mw, "Nothing to OCR."); return; }
+
+    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+    SnapxImage *src = flat ? flat : mw->current_image;
+    set_status(mw, "Running OCR…");
+    snapx_main_update_workflow_ui(mw);
+    snapx_ocr_async(src, mw->config->ocr_lang, ocr_done_cb, mw);
     snapx_image_free(flat);
 }
 
@@ -1393,6 +1508,7 @@ static void on_settings(GtkButton *b, gpointer d)
     snapx_main_apply_config(mw, prev_save_dir);
     snapx_toolbar_apply_config(mw->config);
     snapx_main_refresh_shortcut_tooltips(mw);
+    snapx_main_update_workflow_ui(mw);
     if (mw->history_panel)
         snapx_history_panel_refresh(mw->history_panel, mw->config);
 }
@@ -1868,6 +1984,23 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_widget_add_controller(mw->drawing_area, GTK_EVENT_CONTROLLER(crop_click));
 #endif
 
+    /* ── Workflow status (upload / OCR) ──────────────────────────────────── */
+    GtkWidget *workflow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_add_css_class(workflow, "snapx-actionbar");
+    mw->lbl_upload_status = gtk_label_new("");
+    mw->lbl_ocr_status    = gtk_label_new("");
+    gtk_widget_add_css_class(mw->lbl_upload_status, "snapx-workflow-status");
+    gtk_widget_add_css_class(mw->lbl_ocr_status, "snapx-workflow-status");
+    gtk_label_set_xalign(GTK_LABEL(mw->lbl_upload_status), 0.0f);
+    gtk_label_set_xalign(GTK_LABEL(mw->lbl_ocr_status), 0.0f);
+    gtk_box_append(GTK_BOX(workflow), mw->lbl_upload_status);
+    gtk_box_append(GTK_BOX(workflow), mw->lbl_ocr_status);
+#ifdef SNAPX_USE_GTK4
+    gtk_box_append(GTK_BOX(vbox), workflow);
+#else
+    gtk_box_pack_start(GTK_BOX(vbox), workflow, FALSE, FALSE, 0);
+#endif
+
     /* ── Bottom action bar ───────────────────────────────────────────────── */
     GtkWidget *action_bar;
 #ifdef SNAPX_USE_GTK4
@@ -1913,21 +2046,22 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_widget_set_visible(mw->quality_label,
                             config->default_format != SNAPX_FORMAT_PNG);
 
-    /* Copy / Save / Open folder */
     GtkWidget *btn_copy = gtk_button_new_with_label("Copy");
+    GtkWidget *btn_ocr = gtk_button_new_with_label("Copy text");
     GtkWidget *btn_upload = gtk_button_new_with_label("Upload");
     GtkWidget *btn_save = gtk_button_new_with_label("Save");
     GtkWidget *btn_folder = gtk_button_new_with_label("Open folder");
     mw->btn_upload = btn_upload;
-    if (!snapx_upload_available())
-        gtk_widget_set_visible(btn_upload, FALSE);
+    mw->btn_ocr    = btn_ocr;
     gtk_widget_add_css_class(btn_save, "suggested-action");
     gtk_widget_set_tooltip_text(btn_copy, "Copy to clipboard  (Ctrl+C)");
+    gtk_widget_set_tooltip_text(btn_ocr, "Copy text from image (OCR)");
     gtk_widget_set_tooltip_text(btn_upload, "Upload and copy link  (Ctrl+U)");
     gtk_widget_set_tooltip_text(btn_save, "Save to file  (Ctrl+S)");
     gtk_widget_set_tooltip_text(btn_folder,
         "Open screenshots folder in file manager (last save location if available)");
     g_signal_connect(btn_copy,   "clicked", G_CALLBACK(on_copy_clipboard), mw);
+    g_signal_connect(btn_ocr,    "clicked", G_CALLBACK(on_ocr),            mw);
     g_signal_connect(btn_upload, "clicked", G_CALLBACK(on_upload),         mw);
     g_signal_connect(btn_save,   "clicked", G_CALLBACK(on_save),           mw);
     g_signal_connect(btn_folder, "clicked", G_CALLBACK(on_open_folder),    mw);
@@ -1940,6 +2074,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_save);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_folder);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_upload);
+    gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_ocr);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_copy);
 #else
     gtk_box_pack_start(GTK_BOX(action_bar), fmt_label,         FALSE, FALSE, 4);
@@ -1949,8 +2084,11 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_save,          FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_folder,        FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_upload,        FALSE, FALSE, 4);
+    gtk_box_pack_end  (GTK_BOX(action_bar), btn_ocr,           FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_copy,          FALSE, FALSE, 4);
 #endif
+
+    snapx_main_update_workflow_ui(mw);
 
     /* ── Status label ────────────────────────────────────────────────────── */
     mw->statusbar = gtk_label_new("");
@@ -2006,6 +2144,7 @@ void snapx_window_main_set_image(SnapxImage *img)
     if (mw->canvas) snapx_canvas_free(mw->canvas);
     mw->canvas = img ? snapx_canvas_new(img->width, img->height) : NULL;
     snapx_toolbar_set_canvas(mw->canvas, mw->drawing_area);
+    snapx_main_bind_canvas(mw);
     set_fit(mw);
     if (mw->drawing_area) gtk_widget_queue_draw(mw->drawing_area);
 }
@@ -2025,6 +2164,41 @@ GtkApplication *snapx_window_main_get_app(void)
 {
     if (!g_win.win) return NULL;
     return gtk_window_get_application(GTK_WINDOW(g_win.win));
+}
+
+static void on_blur_committed(double x1, double y1, double x2, double y2,
+                              gpointer userdata)
+{
+    (void)userdata;
+    snapx_main_apply_blur_region(x1, y1, x2, y2);
+}
+
+static void snapx_main_bind_canvas(MainWindow *mw)
+{
+    if (mw && mw->canvas)
+        snapx_canvas_set_blur_handler(mw->canvas, on_blur_committed, mw);
+}
+
+void snapx_main_apply_blur_region(double x1, double y1, double x2, double y2)
+{
+    MainWindow *mw = &g_win;
+    if (!mw->current_image) return;
+
+    int ix0 = (int)(x1 < x2 ? x1 : x2);
+    int iy0 = (int)(y1 < y2 ? y1 : y2);
+    int iw  = (int)fabs(x2 - x1);
+    int ih  = (int)fabs(y2 - y1);
+    if (iw < 4 || ih < 4) return;
+
+    snapx_image_pixelate(mw->current_image, ix0, iy0, iw, ih, 8);
+
+    if (mw->display_surface)
+        cairo_surface_destroy(mw->display_surface);
+    mw->display_surface = make_display_surface(mw->current_image);
+    invalidate_scaled(mw);
+    if (mw->drawing_area)
+        gtk_widget_queue_draw(mw->drawing_area);
+    set_status(mw, "Region pixelated.");
 }
 
 const char *snapx_window_main_get_last_path(void)

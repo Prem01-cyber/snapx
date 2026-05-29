@@ -6,6 +6,8 @@
 #include "settings_dialog.h"
 #include "../utils/config.h"
 #include "../utils/shortcut.h"
+#include "../output/upload.h"
+#include "../output/ocr.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -710,14 +712,39 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     GtkWidget *ocr_rows = new_pref_group("OCR");
     gtk_box_append(GTK_BOX(out_page), gtk_widget_get_parent(ocr_rows));
 
+    {
+        char ocr_st[128];
+        snapx_ocr_status_message(config, ocr_st, sizeof(ocr_st));
+        GtkWidget *ocr_status = gtk_label_new(ocr_st);
+        gtk_widget_add_css_class(ocr_status, "snapx-workflow-status");
+        if (snapx_ocr_get_status(config) == SNAPX_OCR_STATUS_AVAILABLE)
+            gtk_widget_add_css_class(ocr_status, "ok");
+        else
+            gtk_widget_add_css_class(ocr_status, "warn");
+        gtk_box_append(GTK_BOX(ocr_rows), ocr_status);
+    }
+
     GtkWidget *ocr_lang_entry = gtk_entry_new();
     gtk_editable_set_text(GTK_EDITABLE(ocr_lang_entry), config->ocr_lang);
     pref_row_add_compact(ocr_rows, "Tesseract language:", ocr_lang_entry);
     gtk_box_append(GTK_BOX(out_page), new_help_label(
-        "OCR requires Tesseract at build time (e.g. eng, deu)."));
+        "OCR requires Tesseract at build time (e.g. eng, deu). "
+        "Fedora: dnf install tesseract-devel, then rebuild snapx."));
 
     GtkWidget *upload_rows = new_pref_group("Upload");
     gtk_box_append(GTK_BOX(out_page), gtk_widget_get_parent(upload_rows));
+
+    {
+        char upload_st[128];
+        snapx_upload_status_message(config, upload_st, sizeof(upload_st));
+        GtkWidget *upload_status = gtk_label_new(upload_st);
+        gtk_widget_add_css_class(upload_status, "snapx-workflow-status");
+        if (snapx_upload_get_status(config) == SNAPX_UPLOAD_STATUS_AVAILABLE)
+            gtk_widget_add_css_class(upload_status, "ok");
+        else
+            gtk_widget_add_css_class(upload_status, "warn");
+        gtk_box_append(GTK_BOX(upload_rows), upload_status);
+    }
 
     const char *upload_svcs[] = { "None", "Imgur", "Custom URL", NULL };
     GtkWidget *upload_svc_dd = gtk_drop_down_new_from_strings(upload_svcs);
@@ -740,6 +767,11 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     GtkWidget *auto_upload_sw = gtk_switch_new();
     gtk_switch_set_active(GTK_SWITCH(auto_upload_sw), config->upload_auto);
     pref_row_add_switch(upload_rows, "Auto upload after capture", auto_upload_sw);
+
+    gtk_box_append(GTK_BOX(out_page), new_help_label(
+        "Upload requires libcurl at build time. "
+        "Fedora: dnf install libcurl-devel, then rebuild snapx. "
+        "Imgur needs a client ID from api.imgur.com."));
 
     gtk_box_append(GTK_BOX(out_page), new_help_label(
         "Sound uses the system beep after a successful capture."));

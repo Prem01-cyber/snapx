@@ -15,6 +15,9 @@
 #  include <curl/curl.h>
 #endif
 
+static volatile int g_upload_busy;
+static volatile int g_upload_cancel;
+
 #ifdef SNAPX_HAVE_UPLOAD
 
 typedef struct {
@@ -192,14 +195,23 @@ static int do_upload(UploadJob *job, char *url, size_t urlsz,
     return ok;
 }
 
-static void upload_invoke(gpointer data)
+static gboolean upload_invoke(gpointer data)
 {
     UploadJob *job = data;
-    if (job->done)
-        job->done(job->ok, job->ok ? job->url : NULL,
-                  job->ok ? NULL : job->err, job->userdata);
+    int cancelled = g_upload_cancel;
+    g_upload_cancel = 0;
+    g_upload_busy   = 0;
+
+    if (job->done) {
+        if (cancelled)
+            job->done(0, NULL, "Upload cancelled", job->userdata);
+        else
+            job->done(job->ok, job->ok ? job->url : NULL,
+                      job->ok ? NULL : job->err, job->userdata);
+    }
     snapx_encoded_image_free(&job->enc);
     free(job);
+    return G_SOURCE_REMOVE;
 }
 
 static gpointer upload_thread(gpointer data)
@@ -212,6 +224,53 @@ static gpointer upload_thread(gpointer data)
 }
 
 #endif /* SNAPX_HAVE_UPLOAD */
+
+SnapxUploadStatus snapx_upload_get_status(const SnapxConfig *cfg)
+{
+#ifndef SNAPX_HAVE_UPLOAD
+    (void)cfg;
+    return SNAPX_UPLOAD_STATUS_NOT_BUILT;
+#else
+    if (!cfg || cfg->upload_service == SNAPX_UPLOAD_NONE)
+        return SNAPX_UPLOAD_STATUS_NOT_CONFIGURED;
+    if (cfg->upload_service == SNAPX_UPLOAD_IMGUR &&
+        !cfg->upload_imgur_client_id[0])
+        return SNAPX_UPLOAD_STATUS_NOT_CONFIGURED;
+    if (cfg->upload_service == SNAPX_UPLOAD_CUSTOM &&
+        !cfg->upload_custom_url[0])
+        return SNAPX_UPLOAD_STATUS_NOT_CONFIGURED;
+    return SNAPX_UPLOAD_STATUS_AVAILABLE;
+#endif
+}
+
+void snapx_upload_status_message(const SnapxConfig *cfg, char *buf, size_t bufsz)
+{
+    if (!buf || bufsz == 0) return;
+    switch (snapx_upload_get_status(cfg)) {
+    case SNAPX_UPLOAD_STATUS_NOT_BUILT:
+        snprintf(buf, bufsz, "Upload: not installed (rebuild with libcurl)");
+        break;
+    case SNAPX_UPLOAD_STATUS_NOT_CONFIGURED:
+        snprintf(buf, bufsz, "Upload: not configured — open Settings");
+        break;
+    default:
+        if (g_upload_busy)
+            snprintf(buf, bufsz, "Upload: uploading…");
+        else
+            snprintf(buf, bufsz, "Upload: ready");
+        break;
+    }
+}
+
+int snapx_upload_busy(void)
+{
+    return g_upload_busy ? 1 : 0;
+}
+
+void snapx_upload_cancel(void)
+{
+    g_upload_cancel = 1;
+}
 
 int snapx_upload_sync(const SnapxEncodedImage *enc, const SnapxConfig *config,
                       char *url_out, size_t url_sz,
@@ -266,6 +325,8 @@ void snapx_upload_async(const SnapxEncodedImage *enc,
     job->done     = done;
     job->userdata = userdata;
 
+    g_upload_cancel = 0;
+    g_upload_busy   = 1;
     GThread *t = g_thread_new("snapx-upload", upload_thread, job);
     g_thread_unref(t);
 #else

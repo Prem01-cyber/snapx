@@ -208,3 +208,57 @@ window.snapx-settings label.error {
   color: @destructive_color;
   margin-top: 4px;
 }
+
+/* ── Recent captures sidebar ─────────────────────────────────────────────── */
+
+.snapx-history {
+  background-color: alpha(@window_bg_color, 0.6);
+  border-right: 1px solid alpha(@borders, 0.5);
+}
+
+.snapx-history-row {
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.snapx-history-row:hover {
+  background-color: alpha(@accent_bg_color, 0.12);
+}
+
+list row:selected .snapx-history-row {
+  background-color: alpha(@accent_bg_color, 0.2);
+}
+
+.snapx-history-thumb {
+  border-radius: 6px;
+  border: 1px solid alpha(@borders, 0.6);
+}
+
+.snapx-history-name {
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+
+label.dim-label {
+  opacity: 0.55;
+  font-size: 0.85rem;
+}
+
+/* ── Upload / OCR workflow status ────────────────────────────────────────── */
+
+.snapx-workflow-status {
+  font-size: 0.82rem;
+  opacity: 0.75;
+  margin-start: 8px;
+  margin-end: 8px;
+}
+
+.snapx-workflow-status.warn {
+  opacity: 0.9;
+  color: @warning_color;
+}
+
+.snapx-workflow-status.ok {
+  opacity: 0.85;
+  color: @success_color;
+}

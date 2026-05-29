@@ -33,6 +33,11 @@ void snapx_canvas_set_tool(SnapxAnnotationCanvas *canvas, SnapxAnnotationTool to
  */
 void snapx_canvas_set_color(SnapxAnnotationCanvas *canvas, const GdkRGBA *color);
 
+typedef void (*SnapxBlurCommittedFn)(double x1, double y1, double x2, double y2,
+                                     gpointer userdata);
+void snapx_canvas_set_blur_handler(SnapxAnnotationCanvas *canvas,
+                                   SnapxBlurCommittedFn fn, gpointer userdata);
+
 /**
  * @brief Begin a new stroke at image coordinates (x, y).
  */

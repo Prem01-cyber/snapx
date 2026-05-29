@@ -193,8 +193,10 @@ static void on_canvas_release(GtkGestureClick *g, int n, double x, double y,
     }
     double ix, iy;
     stroke_point(x, y, &ix, &iy);
-    g_tb.in_stroke    = FALSE;
-    g_tb.annot_dirty  = TRUE;
+    SnapxAnnotationTool tool = g_tb.active_tool;
+    g_tb.in_stroke = FALSE;
+    if (tool != SNAPX_TOOL_BLUR)
+        g_tb.annot_dirty = TRUE;
     snapx_canvas_stroke_end(g_tb.canvas, ix, iy);
     snapx_main_schedule_redraw();
 }
@@ -235,8 +237,10 @@ static gboolean on_canvas_release_gtk3(GtkWidget *w, GdkEventButton *ev, gpointe
     }
     double ix, iy;
     stroke_point(ev->x, ev->y, &ix, &iy);
-    g_tb.in_stroke   = FALSE;
-    g_tb.annot_dirty = TRUE;
+    SnapxAnnotationTool tool = g_tb.active_tool;
+    g_tb.in_stroke = FALSE;
+    if (tool != SNAPX_TOOL_BLUR)
+        g_tb.annot_dirty = TRUE;
     snapx_canvas_stroke_end(g_tb.canvas, ix, iy);
     snapx_main_schedule_redraw();
     return FALSE;
