@@ -367,7 +367,6 @@ GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
     color_btn = gtk_color_dialog_button_new(cdlg);
     gtk_color_dialog_button_set_rgba(GTK_COLOR_DIALOG_BUTTON(color_btn),
                                       &g_tb.active_color);
-    g_object_unref(cdlg);
     g_signal_connect(color_btn, "notify::rgba", G_CALLBACK(on_color_notify), NULL);
 #else
     color_btn = gtk_color_button_new_with_rgba(&g_tb.active_color);

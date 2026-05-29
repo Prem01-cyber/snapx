@@ -12,20 +12,76 @@
 
 static GtkWidget *g_recording_entry = NULL;
 
-/* ─── Labelled grid row helper ───────────────────────────────────────────── */
+/* ─── Layout helpers ─────────────────────────────────────────────────────── */
 
-static GtkWidget *make_row(GtkWidget *grid, int row,
-                            const char *label_text, GtkWidget *control)
+static GtkWidget *wrap_tab_scroll(GtkWidget *content)
 {
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_vexpand(scroll, TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), content);
+    return scroll;
+}
+
+static GtkWidget *new_tab_page(void)
+{
+    GtkWidget *page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
+    gtk_widget_set_margin_start(page, 20);
+    gtk_widget_set_margin_end(page, 20);
+    gtk_widget_set_margin_top(page, 16);
+    gtk_widget_set_margin_bottom(page, 20);
+    gtk_widget_add_css_class(page, "snapx-pref-page");
+    return page;
+}
+
+static GtkWidget *new_pref_group(const char *title)
+{
+    GtkWidget *group = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_add_css_class(group, "snapx-pref-group");
+
+    if (title && title[0]) {
+        char markup[128];
+        snprintf(markup, sizeof(markup), "<b>%s</b>", title);
+        GtkWidget *lbl = gtk_label_new(NULL);
+        gtk_label_set_markup(GTK_LABEL(lbl), markup);
+        gtk_widget_add_css_class(lbl, "snapx-settings-section");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+        gtk_box_append(GTK_BOX(group), lbl);
+    }
+
+    GtkWidget *rows = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_add_css_class(rows, "snapx-pref-rows");
+    gtk_box_append(GTK_BOX(group), rows);
+    return rows;
+}
+
+static GtkWidget *make_pref_row(const char *label_text, GtkWidget *control)
+{
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_add_css_class(row, "snapx-pref-row");
+
     GtkWidget *lbl = gtk_label_new(label_text);
+    gtk_widget_add_css_class(lbl, "snapx-pref-label");
+    gtk_label_set_xalign(GTK_LABEL(lbl), 1.0f);
     gtk_widget_set_halign(lbl, GTK_ALIGN_END);
-    gtk_widget_set_margin_end(lbl, 8);
-    gtk_widget_set_margin_bottom(lbl, 6);
-    gtk_grid_attach(GTK_GRID(grid), lbl,     0, row, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), control, 1, row, 1, 1);
+    gtk_widget_set_valign(lbl, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(row), lbl);
+
     gtk_widget_set_hexpand(control, TRUE);
-    gtk_widget_set_margin_bottom(control, 6);
-    return control;
+    gtk_widget_set_halign(control, GTK_ALIGN_FILL);
+    gtk_box_append(GTK_BOX(row), control);
+    return row;
+}
+
+static void pref_row_add(GtkWidget *rows, const char *label, GtkWidget *control)
+{
+    gtk_box_append(GTK_BOX(rows), make_pref_row(label, control));
+}
+
+static void pref_row_add_widget(GtkWidget *rows, GtkWidget *row)
+{
+    gtk_box_append(GTK_BOX(rows), row);
 }
 
 static GtkWidget *new_record_button(GtkWidget *entry);
@@ -39,43 +95,18 @@ static void on_clear_shortcut(GtkButton *btn, gpointer entry)
     gtk_widget_remove_css_class(GTK_WIDGET(entry), "snapx-recording");
 }
 
-static GtkWidget *make_shortcut_row(GtkWidget *grid, int row,
-                                     const char *label, GtkWidget *entry)
+static GtkWidget *make_shortcut_row(const char *label, GtkWidget *entry)
 {
     GtkWidget *record = new_record_button(entry);
     GtkWidget *clear  = gtk_button_new_with_label("Clear");
     g_signal_connect(clear, "clicked", G_CALLBACK(on_clear_shortcut), entry);
 
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_hexpand(entry, TRUE);
     gtk_box_append(GTK_BOX(box), entry);
     gtk_box_append(GTK_BOX(box), record);
     gtk_box_append(GTK_BOX(box), clear);
-    gtk_widget_set_hexpand(entry, TRUE);
-    make_row(grid, row, label, box);
-    return entry;
-}
-
-static GtkWidget *wrap_tab_scroll(GtkWidget *content)
-{
-    GtkWidget *scroll = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
-                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_widget_set_vexpand(scroll, TRUE);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), content);
-    return scroll;
-}
-
-static void add_section_header(GtkWidget *grid, int *row, const char *text)
-{
-    char markup[128];
-    snprintf(markup, sizeof(markup), "<b>%s</b>", text);
-    GtkWidget *lbl = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(lbl), markup);
-    gtk_widget_add_css_class(lbl, "snapx-settings-section");
-    gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-    if (*row > 0)
-        gtk_widget_set_margin_top(lbl, 10);
-    gtk_grid_attach(GTK_GRID(grid), lbl, 0, (*row)++, 2, 1);
+    return make_pref_row(label, box);
 }
 
 typedef struct {
@@ -305,6 +336,36 @@ static GtkWidget *new_record_button(GtkWidget *entry)
     return b;
 }
 
+static GtkWidget *new_color_button(SnapxConfig *config)
+{
+    GdkRGBA def_color = {
+        config->default_color_r, config->default_color_g,
+        config->default_color_b, config->default_color_a
+    };
+#if GTK_CHECK_VERSION(4, 10, 0)
+    GtkColorDialog *cdlg = gtk_color_dialog_new();
+    gtk_color_dialog_set_title(cdlg, "Default annotation color");
+    gtk_color_dialog_set_with_alpha(cdlg, TRUE);
+    GtkWidget *color_btn = gtk_color_dialog_button_new(cdlg);
+    gtk_color_dialog_button_set_rgba(GTK_COLOR_DIALOG_BUTTON(color_btn), &def_color);
+    return color_btn;
+#else
+    GtkWidget *color_btn = gtk_color_button_new_with_rgba(&def_color);
+    gtk_color_button_set_title(GTK_COLOR_BUTTON(color_btn), "Default annotation color");
+    return color_btn;
+#endif
+}
+
+static GtkWidget *new_help_label(const char *text)
+{
+    GtkWidget *lbl = gtk_label_new(text);
+    gtk_label_set_wrap(GTK_LABEL(lbl), TRUE);
+    gtk_label_set_wrap_mode(GTK_LABEL(lbl), PANGO_WRAP_WORD);
+    gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+    gtk_widget_add_css_class(lbl, "dim-label");
+    return lbl;
+}
+
 void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
 {
     GMainLoop *loop = g_main_loop_new(NULL, FALSE);
@@ -312,8 +373,8 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
 
     GtkWidget *win = gtk_window_new();
     gtk_widget_add_css_class(win, "snapx-settings");
-    gtk_window_set_title(GTK_WINDOW(win), "snapx Preferences");
-    gtk_window_set_default_size(GTK_WINDOW(win), 620, 720);
+    gtk_window_set_title(GTK_WINDOW(win), "Preferences");
+    gtk_window_set_default_size(GTK_WINDOW(win), 640, 560);
     gtk_window_set_resizable(GTK_WINDOW(win), TRUE);
     gtk_window_set_modal(GTK_WINDOW(win), TRUE);
     if (parent)
@@ -326,98 +387,86 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     gtk_widget_add_controller(win, key_ctrl);
 
     GtkWidget *header = gtk_header_bar_new();
-    gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(header), FALSE);
+    gtk_header_bar_set_title_widget(GTK_HEADER_BAR(header),
+                                    gtk_label_new("Preferences"));
     gtk_window_set_titlebar(GTK_WINDOW(win), header);
 
     GtkWidget *btn_cancel = gtk_button_new_with_label("Cancel");
-    GtkWidget *btn_ok     = gtk_button_new_with_label("OK");
+    GtkWidget *btn_ok     = gtk_button_new_with_label("Save");
     gtk_widget_add_css_class(btn_ok, "suggested-action");
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), btn_cancel);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), btn_ok);
     g_signal_connect_swapped(btn_cancel, "clicked",
                               G_CALLBACK(gtk_window_close), win);
 
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_set_margin_start(vbox, 16);
-    gtk_widget_set_margin_end(vbox, 16);
-    gtk_widget_set_margin_top(vbox, 12);
-    gtk_widget_set_margin_bottom(vbox, 12);
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_window_set_child(GTK_WINDOW(win), vbox);
-
-    GtkWidget *err_label = gtk_label_new("");
-    gtk_widget_set_halign(err_label, GTK_ALIGN_START);
-    gtk_widget_add_css_class(err_label, "error");
 
     GtkWidget *notebook = gtk_notebook_new();
     gtk_widget_set_vexpand(notebook, TRUE);
     gtk_box_append(GTK_BOX(vbox), notebook);
 
-    /* ── Tab 1: Save ───────────────────────────────────────────────────── */
-    GtkWidget *save_grid = gtk_grid_new();
-    gtk_grid_set_column_spacing(GTK_GRID(save_grid), 12);
-    gtk_grid_set_row_spacing(GTK_GRID(save_grid), 2);
-    gtk_widget_set_margin_top(save_grid, 12);
-    gtk_widget_set_margin_start(save_grid, 16);
-    gtk_widget_set_margin_end(save_grid, 16);
-    gtk_widget_set_margin_bottom(save_grid, 16);
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), wrap_tab_scroll(save_grid),
-                              gtk_label_new("Save"));
-    int r = 0;
+    GtkWidget *err_label = gtk_label_new("");
+    gtk_widget_set_halign(err_label, GTK_ALIGN_START);
+    gtk_widget_add_css_class(err_label, "error");
+    gtk_widget_set_margin_start(err_label, 20);
+    gtk_widget_set_margin_end(err_label, 20);
+    gtk_widget_set_margin_bottom(err_label, 8);
+
+    /* ── Tab: Save ─────────────────────────────────────────────────────── */
+    GtkWidget *save_page = new_tab_page();
+    GtkWidget *save_rows = new_pref_group("Save location");
+    gtk_box_append(GTK_BOX(save_page), gtk_widget_get_parent(save_rows));
 
     GtkWidget *dir_entry = gtk_entry_new();
     gtk_editable_set_text(GTK_EDITABLE(dir_entry), config->save_dir);
-    make_row(save_grid, r++, "Save directory:", dir_entry);
+    pref_row_add(save_rows, "Directory:", dir_entry);
 
     GtkWidget *pattern_entry = gtk_entry_new();
     gtk_editable_set_text(GTK_EDITABLE(pattern_entry), config->filename_pattern);
-    make_row(save_grid, r++, "Filename pattern:", pattern_entry);
+    pref_row_add(save_rows, "Filename pattern:", pattern_entry);
 
-    GtkWidget *help = gtk_label_new(
+    gtk_box_append(GTK_BOX(save_page), new_help_label(
         "Tokens: %Y %m %d %H %M %S (date/time), %n (0001…), "
-        "%d / %i / %u (1, 2, 3…), %03d / %04d (zero-padded counter), %% (literal %)");
-    gtk_label_set_wrap(GTK_LABEL(help), TRUE);
-    gtk_widget_set_halign(help, GTK_ALIGN_START);
-    gtk_widget_set_margin_bottom(help, 6);
-    gtk_grid_attach(GTK_GRID(save_grid), help, 0, r++, 2, 1);
+        "%d / %i / %u (1, 2, 3…), %03d / %04d (zero-padded counter), "
+        "%% (literal %)"));
 
     GtkWidget *preview_lbl = gtk_label_new("");
     gtk_widget_set_halign(preview_lbl, GTK_ALIGN_START);
+    pref_row_add(save_rows, "Next save as:", preview_lbl);
+
     PatternPreviewCtx *pctx = g_new(PatternPreviewCtx, 1);
     pctx->pattern_entry = pattern_entry;
     pctx->preview_label = preview_lbl;
     pctx->config        = config;
     update_preview(pctx);
     g_signal_connect(pattern_entry, "changed", G_CALLBACK(on_pattern_changed), pctx);
-    make_row(save_grid, r++, "Preview (next save):", preview_lbl);
 
-    /* ── Tab 2: Capture ────────────────────────────────────────────────── */
-    GtkWidget *cap_grid = gtk_grid_new();
-    gtk_grid_set_column_spacing(GTK_GRID(cap_grid), 12);
-    gtk_grid_set_row_spacing(GTK_GRID(cap_grid), 2);
-    gtk_widget_set_margin_top(cap_grid, 12);
-    gtk_widget_set_margin_start(cap_grid, 16);
-    gtk_widget_set_margin_end(cap_grid, 16);
-    gtk_widget_set_margin_bottom(cap_grid, 16);
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), wrap_tab_scroll(cap_grid),
-                              gtk_label_new("Capture"));
-    r = 0;
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), wrap_tab_scroll(save_page),
+                              gtk_label_new("Save"));
+
+    /* ── Tab: Capture ──────────────────────────────────────────────────── */
+    GtkWidget *cap_page = new_tab_page();
+    GtkWidget *cap_rows = new_pref_group("Capture defaults");
+    gtk_box_append(GTK_BOX(cap_page), gtk_widget_get_parent(cap_rows));
 
     const char *modes[] = { "Full Screen", "Single Monitor", "Region",
                              "Window", "Active Window", NULL };
     GtkWidget *mode_dd = gtk_drop_down_new_from_strings(modes);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(mode_dd), (guint)config->default_mode);
-    make_row(cap_grid, r++, "Default mode:", mode_dd);
+    pref_row_add(cap_rows, "Default mode:", mode_dd);
 
     GtkWidget *delay_spin = gtk_spin_button_new_with_range(0, 60, 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(delay_spin),
                                (double)config->default_delay);
-    make_row(cap_grid, r++, "Default delay (s):", delay_spin);
+    pref_row_add(cap_rows, "Delay (seconds):", delay_spin);
 
     GtkWidget *cursor_sw = gtk_switch_new();
     gtk_switch_set_active(GTK_SWITCH(cursor_sw), config->show_cursor);
-    make_row(cap_grid, r++, "Include cursor:", cursor_sw);
+    pref_row_add(cap_rows, "Include cursor:", cursor_sw);
 
-    add_section_header(cap_grid, &r, "Annotation defaults");
+    GtkWidget *ann_rows = new_pref_group("Annotation defaults");
+    gtk_box_append(GTK_BOX(cap_page), gtk_widget_get_parent(ann_rows));
 
     const char *tools[] = { "Rectangle", "Arrow", "Pen", "Text",
                              "Blur", "Highlight", NULL };
@@ -425,131 +474,100 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     if ((unsigned)config->default_tool < 6u)
         gtk_drop_down_set_selected(GTK_DROP_DOWN(tool_dd),
                                    (guint)config->default_tool);
-    make_row(cap_grid, r++, "Default tool:", tool_dd);
+    pref_row_add(ann_rows, "Default tool:", tool_dd);
 
-    GdkRGBA def_color = {
-        config->default_color_r, config->default_color_g,
-        config->default_color_b, config->default_color_a
-    };
-    GtkWidget *color_btn;
-#if GTK_CHECK_VERSION(4, 10, 0)
-    GtkColorDialog *cdlg = gtk_color_dialog_new();
-    gtk_color_dialog_set_title(cdlg, "Default annotation color");
-    gtk_color_dialog_set_with_alpha(cdlg, TRUE);
-    color_btn = gtk_color_dialog_button_new(cdlg);
-    gtk_color_dialog_button_set_rgba(GTK_COLOR_DIALOG_BUTTON(color_btn), &def_color);
-    g_object_unref(cdlg);
-#else
-    color_btn = gtk_color_button_new_with_rgba(&def_color);
-    gtk_color_button_set_title(GTK_COLOR_BUTTON(color_btn), "Default annotation color");
-#endif
-    make_row(cap_grid, r++, "Default color:", color_btn);
+    GtkWidget *color_btn = new_color_button(config);
+    pref_row_add(ann_rows, "Default color:", color_btn);
 
-    /* ── Tab 3: Output ─────────────────────────────────────────────────── */
-    GtkWidget *out_grid = gtk_grid_new();
-    gtk_grid_set_column_spacing(GTK_GRID(out_grid), 12);
-    gtk_grid_set_row_spacing(GTK_GRID(out_grid), 2);
-    gtk_widget_set_margin_top(out_grid, 12);
-    gtk_widget_set_margin_start(out_grid, 16);
-    gtk_widget_set_margin_end(out_grid, 16);
-    gtk_widget_set_margin_bottom(out_grid, 16);
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), wrap_tab_scroll(out_grid),
-                              gtk_label_new("Output"));
-    r = 0;
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), wrap_tab_scroll(cap_page),
+                              gtk_label_new("Capture"));
+
+    /* ── Tab: Output ───────────────────────────────────────────────────── */
+    GtkWidget *out_page = new_tab_page();
+    GtkWidget *out_rows = new_pref_group("After capture");
+    gtk_box_append(GTK_BOX(out_page), gtk_widget_get_parent(out_rows));
 
     const char *fmts[] = { "PNG", "JPEG", "WebP", NULL };
     GtkWidget *fmt_dd = gtk_drop_down_new_from_strings(fmts);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(fmt_dd),
                                 (guint)config->default_format);
-    make_row(out_grid, r++, "Default format:", fmt_dd);
+    pref_row_add(out_rows, "Default format:", fmt_dd);
 
     GtkWidget *quality_spin = gtk_spin_button_new_with_range(1, 100, 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(quality_spin),
                                (double)config->jpeg_quality);
-    make_row(out_grid, r++, "JPEG quality:", quality_spin);
+    pref_row_add(out_rows, "JPEG quality:", quality_spin);
 
     GtkWidget *clipboard_sw = gtk_switch_new();
     gtk_switch_set_active(GTK_SWITCH(clipboard_sw), config->auto_clipboard);
-    make_row(out_grid, r++, "Auto copy to clipboard:", clipboard_sw);
+    pref_row_add(out_rows, "Auto copy to clipboard:", clipboard_sw);
 
     GtkWidget *sound_sw = gtk_switch_new();
     gtk_switch_set_active(GTK_SWITCH(sound_sw), config->play_sound);
-    make_row(out_grid, r++, "Play sound on capture:", sound_sw);
+    pref_row_add(out_rows, "Play sound on capture:", sound_sw);
 
-    GtkWidget *sound_help = gtk_label_new(
-        "Plays the system beep after a successful capture.");
-    gtk_label_set_wrap(GTK_LABEL(sound_help), TRUE);
-    gtk_widget_set_halign(sound_help, GTK_ALIGN_START);
-    gtk_widget_add_css_class(sound_help, "dim-label");
-    gtk_grid_attach(GTK_GRID(out_grid), sound_help, 0, r++, 2, 1);
+    gtk_box_append(GTK_BOX(out_page), new_help_label(
+        "Sound uses the system beep after a successful capture."));
 
-    /* ── Tab 4: Shortcuts ──────────────────────────────────────────────── */
-    GtkWidget *sc_outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_set_vexpand(sc_outer, TRUE);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), wrap_tab_scroll(out_page),
+                              gtk_label_new("Output"));
 
-    GtkWidget *sc_scroll = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sc_scroll),
-                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_widget_set_vexpand(sc_scroll, TRUE);
-    gtk_box_append(GTK_BOX(sc_outer), sc_scroll);
+    /* ── Tab: Shortcuts ────────────────────────────────────────────────── */
+    GtkWidget *sc_page = new_tab_page();
 
-    GtkWidget *sc_grid = gtk_grid_new();
-    gtk_grid_set_column_spacing(GTK_GRID(sc_grid), 12);
-    gtk_grid_set_row_spacing(GTK_GRID(sc_grid), 2);
-    gtk_widget_set_margin_top(sc_grid, 12);
-    gtk_widget_set_margin_start(sc_grid, 16);
-    gtk_widget_set_margin_end(sc_grid, 16);
-    gtk_widget_set_margin_bottom(sc_grid, 12);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sc_scroll), sc_grid);
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), sc_outer,
-                              gtk_label_new("Shortcuts"));
-    r = 0;
-
-    GtkWidget *sc_help = gtk_label_new(
+    gtk_box_append(GTK_BOX(sc_page), new_help_label(
         "Click Record, then press a key combination. Clear removes a binding. "
-        "Global capture uses the default mode from Capture. In-app shortcuts "
-        "work while snapx is focused; global grabs work on X11/Windows only.");
-    gtk_label_set_wrap(GTK_LABEL(sc_help), TRUE);
-    gtk_widget_set_halign(sc_help, GTK_ALIGN_START);
-    gtk_widget_add_css_class(sc_help, "dim-label");
-    gtk_widget_set_margin_bottom(sc_help, 4);
-    gtk_grid_attach(GTK_GRID(sc_grid), sc_help, 0, r++, 2, 1);
+        "Global shortcuts work system-wide on X11/Windows and on Wayland via "
+        "the desktop portal (approve on first launch). In-app shortcuts work "
+        "while snapx is focused."));
+
+    GtkWidget *reset_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_halign(reset_row, GTK_ALIGN_END);
+    GtkWidget *btn_reset = gtk_button_new_with_label("Reset to defaults");
+    gtk_box_append(GTK_BOX(reset_row), btn_reset);
+    gtk_box_append(GTK_BOX(sc_page), reset_row);
 
     const SnapxShortcuts *sc = &config->shortcuts;
 
-    add_section_header(sc_grid, &r, "Capture");
+    GtkWidget *sc_cap = new_pref_group("Global & capture");
+    gtk_box_append(GTK_BOX(sc_page), gtk_widget_get_parent(sc_cap));
     GtkWidget *sc_global = new_shortcut_entry(sc->global_capture);
-    make_shortcut_row(sc_grid, r++, "Global (default mode):", sc_global);
+    pref_row_add_widget(sc_cap, make_shortcut_row("Global (default mode):", sc_global));
     GtkWidget *sc_capture_full = new_shortcut_entry(sc->capture_fullscreen);
-    make_shortcut_row(sc_grid, r++, "Full screen:", sc_capture_full);
+    pref_row_add_widget(sc_cap, make_shortcut_row("Full screen:", sc_capture_full));
     GtkWidget *sc_capture_monitor = new_shortcut_entry(sc->capture_monitor);
-    make_shortcut_row(sc_grid, r++, "Monitor:", sc_capture_monitor);
+    pref_row_add_widget(sc_cap, make_shortcut_row("Monitor:", sc_capture_monitor));
     GtkWidget *sc_capture_region = new_shortcut_entry(sc->capture_region);
-    make_shortcut_row(sc_grid, r++, "Region:", sc_capture_region);
+    pref_row_add_widget(sc_cap, make_shortcut_row("Region:", sc_capture_region));
     GtkWidget *sc_capture_window = new_shortcut_entry(sc->capture_window);
-    make_shortcut_row(sc_grid, r++, "Window:", sc_capture_window);
+    pref_row_add_widget(sc_cap, make_shortcut_row("Window:", sc_capture_window));
 
-    add_section_header(sc_grid, &r, "Editor");
+    GtkWidget *sc_ed = new_pref_group("Editor");
+    gtk_box_append(GTK_BOX(sc_page), gtk_widget_get_parent(sc_ed));
     GtkWidget *sc_save = new_shortcut_entry(sc->save);
-    make_shortcut_row(sc_grid, r++, "Save:", sc_save);
+    pref_row_add_widget(sc_ed, make_shortcut_row("Save:", sc_save));
     GtkWidget *sc_copy = new_shortcut_entry(sc->copy);
-    make_shortcut_row(sc_grid, r++, "Copy:", sc_copy);
+    pref_row_add_widget(sc_ed, make_shortcut_row("Copy:", sc_copy));
     GtkWidget *sc_undo = new_shortcut_entry(sc->undo);
-    make_shortcut_row(sc_grid, r++, "Undo:", sc_undo);
+    pref_row_add_widget(sc_ed, make_shortcut_row("Undo:", sc_undo));
     GtkWidget *sc_redo = new_shortcut_entry(sc->redo);
-    make_shortcut_row(sc_grid, r++, "Redo:", sc_redo);
+    pref_row_add_widget(sc_ed, make_shortcut_row("Redo:", sc_redo));
     GtkWidget *sc_fit = new_shortcut_entry(sc->fit);
-    make_shortcut_row(sc_grid, r++, "Fit view:", sc_fit);
+    pref_row_add_widget(sc_ed, make_shortcut_row("Fit view:", sc_fit));
     GtkWidget *sc_zoom_in = new_shortcut_entry(sc->zoom_in);
-    make_shortcut_row(sc_grid, r++, "Zoom in:", sc_zoom_in);
+    pref_row_add_widget(sc_ed, make_shortcut_row("Zoom in:", sc_zoom_in));
     GtkWidget *sc_zoom_out = new_shortcut_entry(sc->zoom_out);
-    make_shortcut_row(sc_grid, r++, "Zoom out:", sc_zoom_out);
+    pref_row_add_widget(sc_ed, make_shortcut_row("Zoom out:", sc_zoom_out));
 
-    add_section_header(sc_grid, &r, "Region overlay");
+    GtkWidget *sc_ov = new_pref_group("Region overlay");
+    gtk_box_append(GTK_BOX(sc_page), gtk_widget_get_parent(sc_ov));
     GtkWidget *sc_region_ok = new_shortcut_entry(sc->region_confirm);
-    make_shortcut_row(sc_grid, r++, "Confirm:", sc_region_ok);
+    pref_row_add_widget(sc_ov, make_shortcut_row("Confirm:", sc_region_ok));
     GtkWidget *sc_region_cancel = new_shortcut_entry(sc->region_cancel);
-    make_shortcut_row(sc_grid, r++, "Cancel:", sc_region_cancel);
+    pref_row_add_widget(sc_ov, make_shortcut_row("Cancel:", sc_region_cancel));
+
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), wrap_tab_scroll(sc_page),
+                              gtk_label_new("Shortcuts"));
 
     DlgWidgets *dw = g_new(DlgWidgets, 1);
     dw->config           = config;
@@ -582,16 +600,12 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     dw->err_label        = err_label;
     dw->loop             = loop;
 
-    GtkWidget *reset_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_set_halign(reset_row, GTK_ALIGN_END);
-    gtk_widget_set_margin_start(reset_row, 16);
-    gtk_widget_set_margin_end(reset_row, 16);
-    GtkWidget *btn_reset = gtk_button_new_with_label("Reset shortcuts to defaults");
     g_signal_connect(btn_reset, "clicked", G_CALLBACK(on_reset_shortcuts), dw);
-    gtk_box_append(GTK_BOX(reset_row), btn_reset);
-    gtk_box_append(GTK_BOX(sc_outer), reset_row);
 
-    gtk_box_append(GTK_BOX(vbox), err_label);
+    GtkWidget *footer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_add_css_class(footer, "snapx-settings-footer");
+    gtk_box_append(GTK_BOX(footer), err_label);
+    gtk_box_append(GTK_BOX(vbox), footer);
 
     g_signal_connect(btn_ok, "clicked", G_CALLBACK(on_ok_clicked), dw);
     g_signal_connect(win, "close-request", G_CALLBACK(on_close_request), loop);
