@@ -88,12 +88,21 @@ jobs:
         run: |
           winget install -e --id JRSoftware.InnoSetup `
             --accept-package-agreements --accept-source-agreements --silent
-          $isccDir = "${env:ProgramFiles(x86)}\Inno Setup 6"
-          if (-not (Test-Path "$isccDir\ISCC.exe")) { throw "ISCC not found in $isccDir" }
-          echo "$isccDir" >> $env:GITHUB_PATH
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC not found: $iscc" }
 
-      - name: Build installer
-        run: bash packaging/windows/build-installer.sh "${{ steps.ver.outputs.version }}"
+      - name: Build snapx binary
+        run: SKIP_ISCC=1 bash packaging/windows/build-installer.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Package Windows installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC not found: $iscc" }
+          $build = Join-Path $PWD "build"
+          $iss = Join-Path $PWD "packaging/windows/installer.iss"
+          & $iscc "/DMyAppVersion=${{ steps.ver.outputs.version }}" "/DMyBuildDir=$build" $iss
+          Get-ChildItem packaging/windows/output
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

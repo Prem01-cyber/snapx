@@ -29,6 +29,11 @@ mkdir -p "$OUT"
 ISCC="${ISCC:-ISCC.exe}"
 ISS="${ROOT}/packaging/windows/installer.iss"
 
+if [[ "${SKIP_ISCC:-0}" == "1" ]]; then
+    echo "SKIP_ISCC=1 — binary ready in ${BUILD}; run ISCC separately."
+    exit 0
+fi
+
 "${ISCC}" "/DMyAppVersion=${VERSION}" "/DMyBuildDir=${BUILD}" "${ISS}"
 
 ls -la "${OUT}/"
