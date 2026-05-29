@@ -24,7 +24,7 @@ Pre-built binaries are published on the [Releases](https://github.com/Prem01-cyb
 | **Windows** (64-bit) | `snapx-1.1.0-win64-setup.exe` | Run the installer; launch **snapx** from the Start menu |
 | **macOS** (Apple Silicon / Intel) | `snapx-1.1.0-macos.dmg` | Open the DMG and drag **snapx** to Applications |
 
-> **Note:** Linux AppImage, portable tarball, and Fedora RPM are on [v1.1.0](https://github.com/Prem01-cyber/snapx/releases/tag/v1.1.0). Windows and macOS installers are built by CI and attached to the same release when available.
+> **Note:** All platforms are built by CI and attached to [v1.1.0](https://github.com/Prem01-cyber/snapx/releases/tag/v1.1.0) when available.
 
 ### Linux distribution packages
 

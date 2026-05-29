@@ -27,7 +27,22 @@ fi
 
 mkdir -p "$OUT"
 ISCC="${ISCC:-iscc}"
-"$ISCC" "/DMyAppVersion=${VERSION}" "/DMyBuildDir=${BUILD}" \
-    "${ROOT}/packaging/windows/installer.iss"
+ISS="${ROOT}/packaging/windows/installer.iss"
+
+run_iscc() {
+    local iscc_path="$1"
+    shift
+    if [[ "$iscc_path" == *" "* ]] || [[ "$iscc_path" == *"\\"* ]]; then
+        # GITHUB_ENV ISCC uses Windows paths; cmd handles spaces reliably from MSYS.
+        local win_build win_iss
+        win_build=$(cygpath -w "$BUILD" 2>/dev/null || printf '%s' "$BUILD")
+        win_iss=$(cygpath -w "$ISS" 2>/dev/null || printf '%s' "$ISS")
+        cmd //c "\"${iscc_path}\" /DMyAppVersion=${VERSION} /DMyBuildDir=${win_build} \"${win_iss}\""
+    else
+        "$iscc_path" "/DMyAppVersion=${VERSION}" "/DMyBuildDir=${BUILD}" "$ISS"
+    fi
+}
+
+run_iscc "$ISCC"
 
 ls -la "${OUT}/"
