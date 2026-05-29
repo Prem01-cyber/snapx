@@ -188,6 +188,10 @@ set(SOURCES
     src/utils/hotkey.c
 )
 
+if(PLATFORM_LINUX)
+    list(APPEND SOURCES src/utils/hotkey_wayland.c src/utils/portal_host.c)
+endif()
+
 if(NOT SNAPX_HEADLESS_ONLY)
     list(APPEND SOURCES
         src/ui/window_main.c
@@ -335,6 +339,8 @@ target_compile_options(snapx PRIVATE ${GTK_CFLAGS_OTHER} ${CAIRO_CFLAGS_OTHER})
 install(TARGETS snapx RUNTIME DESTINATION bin)
 
 if(PLATFORM_LINUX)
+    install(FILES packaging/linux/io.github.snapx.desktop
+            DESTINATION share/applications)
     install(FILES packaging/linux/snapx.desktop
             DESTINATION share/applications)
     install(FILES resources/icons/snapx.svg

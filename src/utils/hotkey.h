@@ -20,8 +20,8 @@ typedef enum {
 /**
  * @brief Register global capture hotkeys from config.
  *
+ * On Linux/Wayland: xdg-desktop-portal GlobalShortcuts (system-wide when compositor supports it).
  * On Linux/X11: XGrabKey on the root window for each capture shortcut.
- * On Linux/Wayland: not supported (compositor restriction).
  * On Windows: RegisterHotKey() for each capture shortcut.
  * On macOS: CGEventTap (best-effort; requires Accessibility permission).
  *
@@ -36,5 +36,10 @@ void snapx_hotkey_cleanup(void);
 typedef void (*SnapxHotkeyCallback)(SnapxHotkeyAction action, gpointer user_data);
 
 void snapx_hotkey_set_callback(SnapxHotkeyCallback cb, gpointer user_data);
+
+/** Parent window id for Wayland portal shortcut binding (wayland:… / x11:0x…). */
+void snapx_hotkey_set_application_id(const char *app_id);
+
+void snapx_hotkey_set_parent_window(const char *parent_window);
 
 #endif /* SNAPX_HOTKEY_H */

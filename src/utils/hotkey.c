@@ -3,7 +3,7 @@
  * @brief Global hotkey registration.
  *
  * Linux X11: XGrabKey on the root window, listened via background thread.
- * Linux Wayland: No universal mechanism; we log a notice and skip gracefully.
+ * Linux Wayland: xdg-desktop-portal GlobalShortcuts (GNOME/KDE 45+).
  * Windows: RegisterHotKey + message pump thread.
  * macOS: CGEventTap (requires Accessibility permission in System Preferences).
  */
@@ -27,10 +27,29 @@ typedef struct {
 static SnapxHotkeyCallback g_hotkey_cb = NULL;
 static gpointer            g_hotkey_user_data = NULL;
 
+#ifdef SNAPX_HAVE_WAYLAND
+SnapxHotkeyCallback g_hotkey_cb_for_portal        = NULL;
+gpointer            g_hotkey_user_data_for_portal = NULL;
+#endif
+
 void snapx_hotkey_set_callback(SnapxHotkeyCallback cb, gpointer user_data)
 {
     g_hotkey_cb         = cb;
     g_hotkey_user_data  = user_data;
+#ifdef SNAPX_HAVE_WAYLAND
+    g_hotkey_cb_for_portal        = cb;
+    g_hotkey_user_data_for_portal = user_data;
+#endif
+}
+
+static int linux_session_is_wayland(void)
+{
+    const char *t = getenv("XDG_SESSION_TYPE");
+    if (t && strcasecmp(t, "wayland") == 0)
+        return 1;
+    if (getenv("WAYLAND_DISPLAY"))
+        return 1;
+    return 0;
 }
 
 /* ─────────────────────────────────── Linux X11 ──────────────────────────── */
@@ -149,7 +168,7 @@ static int x11_add_grab(Display *dpy, const char *spec, SnapxHotkeyAction action
     return 1;
 }
 
-void snapx_hotkey_init(SnapxConfig *config)
+void snapx_hotkey_init_x11(SnapxConfig *config)
 {
     if (!config) return;
 
@@ -215,7 +234,7 @@ void snapx_hotkey_init(SnapxConfig *config)
             registered);
 }
 
-void snapx_hotkey_cleanup(void)
+void snapx_hotkey_cleanup_x11(void)
 {
     g_x11hk.stop = 1;
     if (g_x11hk.dpy) {
@@ -227,15 +246,94 @@ void snapx_hotkey_cleanup(void)
     memset(&g_x11hk, 0, sizeof(g_x11hk));
 }
 
-#elif defined(SNAPX_PLATFORM_LINUX)
+#endif /* SNAPX_PLATFORM_LINUX && SNAPX_HAVE_X11 */
+
+#if defined(SNAPX_PLATFORM_LINUX)
+
+#ifdef SNAPX_HAVE_WAYLAND
+#include "hotkey_wayland.h"
+#endif
+
+typedef enum {
+    SNAPX_HK_BACKEND_NONE = 0,
+    SNAPX_HK_BACKEND_X11,
+    SNAPX_HK_BACKEND_PORTAL,
+} SnapxHotkeyBackend;
+
+static SnapxHotkeyBackend g_linux_hk_backend = SNAPX_HK_BACKEND_NONE;
+static char               g_linux_parent_window[128];
+
+void snapx_hotkey_set_application_id(const char *app_id)
+{
+#ifdef SNAPX_HAVE_WAYLAND
+    snapx_hotkey_wayland_set_application_id(app_id);
+#else
+    (void)app_id;
+#endif
+}
+
+void snapx_hotkey_set_parent_window(const char *parent_window)
+{
+    if (parent_window && parent_window[0])
+        snprintf(g_linux_parent_window, sizeof(g_linux_parent_window),
+                 "%s", parent_window);
+#ifdef SNAPX_HAVE_WAYLAND
+    snapx_hotkey_wayland_set_parent_window(parent_window);
+#endif
+}
 
 void snapx_hotkey_init(SnapxConfig *config)
 {
-    (void)config;
-    fprintf(stderr, "[hotkey] Global hotkeys on Wayland are not supported "
-                    "(compositor restriction). Use in-app keyboard shortcuts.\n");
+    if (!config) return;
+
+    if (linux_session_is_wayland()) {
+#ifdef SNAPX_HAVE_WAYLAND
+        g_linux_hk_backend = SNAPX_HK_BACKEND_PORTAL;
+        if (g_linux_parent_window[0])
+            snapx_hotkey_wayland_set_parent_window(g_linux_parent_window);
+        snapx_hotkey_wayland_init(config);
+        if (!snapx_hotkey_wayland_active()) {
+            fprintf(stderr,
+                    "[hotkey] Portal global shortcuts unavailable. "
+                    "On Wayland, install snapx and approve shortcuts in the "
+                    "portal dialog; in-app shortcuts still work while focused.\n");
+            g_linux_hk_backend = SNAPX_HK_BACKEND_NONE;
+        }
+#else
+        fprintf(stderr,
+                "[hotkey] Global hotkeys require a Wayland build with portal "
+                "support. Use in-app shortcuts.\n");
+#endif
+        return;
+    }
+
+#ifdef SNAPX_HAVE_X11
+    g_linux_hk_backend = SNAPX_HK_BACKEND_X11;
+    snapx_hotkey_init_x11(config);
+#else
+    fprintf(stderr, "[hotkey] X11 global hotkeys not available in this build.\n");
+#endif
 }
-void snapx_hotkey_cleanup(void) {}
+
+void snapx_hotkey_cleanup(void)
+{
+    switch (g_linux_hk_backend) {
+#ifdef SNAPX_HAVE_WAYLAND
+    case SNAPX_HK_BACKEND_PORTAL:
+        snapx_hotkey_wayland_cleanup();
+        break;
+#endif
+#ifdef SNAPX_HAVE_X11
+    case SNAPX_HK_BACKEND_X11:
+        snapx_hotkey_cleanup_x11();
+        break;
+#endif
+    default:
+        break;
+    }
+    g_linux_hk_backend = SNAPX_HK_BACKEND_NONE;
+    g_linux_parent_window[0] = '\0';
+}
 
 /* ─────────────────────────────────── Windows ────────────────────────────── */
 #elif defined(SNAPX_PLATFORM_WINDOWS)
@@ -525,6 +623,16 @@ void snapx_hotkey_cleanup(void)
 }
 
 #else
+
+void snapx_hotkey_set_application_id(const char *app_id)
+{
+    (void)app_id;
+}
+
+void snapx_hotkey_set_parent_window(const char *parent_window)
+{
+    (void)parent_window;
+}
 
 void snapx_hotkey_init(SnapxConfig *config) { (void)config; }
 void snapx_hotkey_cleanup(void) {}

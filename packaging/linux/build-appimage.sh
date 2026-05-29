@@ -21,9 +21,9 @@ rm -rf "$APPDIR"
 DESTDIR="$APPDIR" cmake --install "$BUILD" --prefix /usr
 
 # AppRun + desktop at AppDir root for AppImage
-cp "${APPDIR}/usr/share/applications/snapx.desktop" "${APPDIR}/snapx.desktop" 2>/dev/null || \
-    cp "${ROOT}/packaging/linux/snapx.desktop" "${APPDIR}/snapx.desktop"
-sed -i 's|Exec=snapx|Exec=snapx|g' "${APPDIR}/snapx.desktop" 2>/dev/null || true
+cp "${APPDIR}/usr/share/applications/io.github.snapx.desktop" "${APPDIR}/io.github.snapx.desktop" 2>/dev/null || \
+    cp "${ROOT}/packaging/linux/io.github.snapx.desktop" "${APPDIR}/io.github.snapx.desktop"
+sed -i 's|Exec=snapx|Exec=snapx|g' "${APPDIR}/io.github.snapx.desktop" 2>/dev/null || true
 
 ICON="${ROOT}/resources/icons/hicolor/256x256/apps/snapx.png"
 [[ -f "$ICON" ]] && cp "$ICON" "${APPDIR}/snapx.png"
@@ -49,11 +49,11 @@ fi
 
 export DEPLOY_GTK_VERSION=4
 "$LINUXDEPLOY" --appdir "$APPDIR" --executable "${APPDIR}/usr/bin/snapx" \
-    --desktop-file "${APPDIR}/snapx.desktop" \
+    --desktop-file "${APPDIR}/io.github.snapx.desktop" \
     --icon-file "${APPDIR}/snapx.png" \
     --plugin gtk || "$LINUXDEPLOY" --appdir "$APPDIR" \
     --executable "${APPDIR}/usr/bin/snapx" \
-    --desktop-file "${APPDIR}/snapx.desktop" \
+    --desktop-file "${APPDIR}/io.github.snapx.desktop" \
     --icon-file "${APPDIR}/snapx.png"
 
 mkdir -p "$OUT"

@@ -33,6 +33,8 @@ build() {
 
 package() {
     DESTDIR="$pkgdir" cmake --install build
+    install -Dm644 "$pkgname-$pkgver/packaging/linux/io.github.snapx.desktop" \
+        "$pkgdir/usr/share/applications/io.github.snapx.desktop"
     install -Dm644 "$pkgname-$pkgver/packaging/linux/snapx.desktop" \
         "$pkgdir/usr/share/applications/snapx.desktop"
     install -Dm644 "$pkgname-$pkgver/resources/icons/snapx.svg" \

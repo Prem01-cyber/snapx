@@ -591,12 +591,31 @@ static void update_portal_parent(MainWindow *mw)
     ensure_portal_parent(mw, FALSE);
 }
 
+static void on_global_hotkey(SnapxHotkeyAction action, gpointer user_data);
+
+static void snapx_main_register_hotkeys(MainWindow *mw)
+{
+    snapx_hotkey_cleanup();
+    snapx_hotkey_set_callback(on_global_hotkey, mw);
+#ifdef SNAPX_USE_GTK4
+    GtkApplication *app = gtk_window_get_application(GTK_WINDOW(mw->win));
+    if (app) {
+        const char *app_id = g_application_get_application_id(G_APPLICATION(app));
+        if (app_id && app_id[0])
+            snapx_hotkey_set_application_id(app_id);
+    }
+#endif
+    snapx_hotkey_set_parent_window(mw->portal_parent);
+    snapx_hotkey_init(mw->config);
+}
+
 static gboolean portal_parent_on_mapped(gpointer data)
 {
     MainWindow *mw = (MainWindow *)data;
     if (!gtk_widget_get_mapped(GTK_WIDGET(mw->win)))
         return G_SOURCE_CONTINUE;
     ensure_portal_parent(mw, TRUE);
+    snapx_main_register_hotkeys(mw);
     return G_SOURCE_REMOVE;
 }
 
@@ -1244,9 +1263,8 @@ static void on_settings(GtkButton *b, gpointer d)
     char prev_save_dir[SNAPX_CONFIG_MAX_PATH];
     snprintf(prev_save_dir, sizeof(prev_save_dir), "%s", mw->config->save_dir);
     snapx_settings_dialog_show(GTK_WINDOW(mw->win), mw->config);
-    snapx_hotkey_cleanup();
-    snapx_hotkey_set_callback(on_global_hotkey, mw);
-    snapx_hotkey_init(mw->config);
+    ensure_portal_parent(mw, FALSE);
+    snapx_main_register_hotkeys(mw);
     snapx_main_apply_config(mw, prev_save_dir);
     snapx_toolbar_apply_config(mw->config);
     snapx_main_refresh_shortcut_tooltips(mw);
@@ -1692,8 +1710,6 @@ void snapx_window_main_create(GtkApplication      *app,
 
     g_signal_connect(win, "destroy", G_CALLBACK(on_win_destroy), mw);
 
-    snapx_hotkey_set_callback(on_global_hotkey, mw);
-    snapx_hotkey_init(mw->config);
     snapx_main_refresh_shortcut_tooltips(mw);
 
     gtk_widget_set_visible(win, TRUE);

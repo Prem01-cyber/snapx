@@ -52,6 +52,8 @@ Features:
 
 %install
 %cmake_install
+install -Dm644 packaging/linux/io.github.snapx.desktop \
+    %{buildroot}%{_datadir}/applications/io.github.snapx.desktop
 install -Dm644 packaging/linux/snapx.desktop \
     %{buildroot}%{_datadir}/applications/snapx.desktop
 install -Dm644 resources/icons/16x16/apps/snapx.png \
@@ -70,12 +72,14 @@ install -Dm644 resources/icons/snapx.svg \
     %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/snapx.svg
 
 %check
+desktop-file-validate %{buildroot}%{_datadir}/applications/io.github.snapx.desktop
 desktop-file-validate %{buildroot}%{_datadir}/applications/snapx.desktop
 
 %files
 %license LICENSE
 %doc README.md
 %{_bindir}/snapx
+%{_datadir}/applications/io.github.snapx.desktop
 %{_datadir}/applications/snapx.desktop
 %{_datadir}/icons/hicolor/*/apps/snapx.*
 

@@ -34,6 +34,7 @@
 #endif
 #include "utils/config.h"
 #include "utils/hotkey.h"
+#include "utils/portal_host.h"
 #include "utils/monitor.h"
 #include "output/clipboard.h"
 #include "output/save.h"
@@ -264,6 +265,11 @@ int main(int argc, char **argv)
             "  Run: %s --info  for details.\n", argv[0]);
         return 1;
     }
+
+#if defined(SNAPX_PLATFORM_LINUX)
+    if (g_app.platform.session_type == SNAPX_SESSION_WAYLAND)
+        snapx_portal_host_register("io.github.snapx");
+#endif
 
     /* Load config */
     snapx_config_load(&g_app.config);
