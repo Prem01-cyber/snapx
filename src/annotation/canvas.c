@@ -290,25 +290,32 @@ void snapx_canvas_redo(SnapxAnnotationCanvas *canvas)
 
 /* ─── Render ─────────────────────────────────────────────────────────────── */
 
-#define MAX_ANNOT_DEPTH 1024
-
 /**
- * Internal helper: walk the undo stack oldest-first into a local array,
- * render each annotation.  Does NOT render the pending stroke.
+ * Internal helper: walk the undo stack oldest-first and render each annotation.
+ * Does NOT render the pending stroke.  The undo stack is newest-first, so we
+ * collect into a heap array (sized to the actual count — no fixed limit) and
+ * draw it in reverse.
  */
 static void render_committed_internal(const SnapxAnnotationCanvas *canvas,
                                        cairo_t *cr)
 {
-    const SnapxAnnotation *stack[MAX_ANNOT_DEPTH];
+    int count = 0;
+    for (const AnnNode *n = (const AnnNode *)canvas->undo_head; n; n = n->prev)
+        count++;
+    if (count == 0) return;
+
+    const SnapxAnnotation **stack = malloc((size_t)count * sizeof(*stack));
+    if (!stack) return;
+
     int depth = 0;
-    const SnapxAnnotation *a = canvas->undo_head;
-    while (a && depth < MAX_ANNOT_DEPTH) {
-        stack[depth++] = a;
-        const AnnNode *node = (const AnnNode *)stack[depth - 1];
-        a = node->prev ? &node->prev->ann : NULL;
-    }
+    for (const AnnNode *n = (const AnnNode *)canvas->undo_head;
+         n && depth < count; n = n->prev)
+        stack[depth++] = &n->ann;
+
     for (int i = depth - 1; i >= 0; i--)
         snapx_draw_annotation(cr, stack[i]);
+
+    free(stack);
 }
 
 void snapx_canvas_render(const SnapxAnnotationCanvas *canvas, cairo_t *cr)

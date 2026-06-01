@@ -137,17 +137,14 @@ window.snapx-settings .snapx-switch-row label {
 
 window.snapx-settings .snapx-switch-tail {
   min-width: 52px;
-  max-width: 52px;
 }
 
 window.snapx-settings .snapx-switch-tail switch {
   min-width: 52px;
-  max-width: 52px;
 }
 
 window.snapx-settings .snapx-pref-label {
   min-width: 10.5em;
-  max-width: 10.5em;
   font-size: 0.92em;
 }
 
@@ -257,8 +254,8 @@ label.dim-label {
 .snapx-workflow-status {
   font-size: 0.82rem;
   opacity: 0.75;
-  margin-start: 8px;
-  margin-end: 8px;
+  margin-left: 8px;
+  margin-right: 8px;
 }
 
 .snapx-workflow-status.warn {

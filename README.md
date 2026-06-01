@@ -1,108 +1,77 @@
+<div align="center">
+
 # snapx
 
-**A fast, native screenshot tool for Linux, Windows, and macOS**
+**A fast, native screenshot tool for Linux, Windows, and macOS.**
+
+Capture · annotate · beautify · share — without Electron, without a browser, and without GNOME-only APIs.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v1.3.1-green)](https://github.com/Prem01-cyber/snapx/releases/latest)
+[![Release](https://img.shields.io/github/v/release/Prem01-cyber/snapx?label=release&color=2ea44f)](https://github.com/Prem01-cyber/snapx/releases/latest)
 [![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?logo=linux&logoColor=black)](https://github.com/Prem01-cyber/snapx/releases/latest)
 [![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows&logoColor=white)](https://github.com/Prem01-cyber/snapx/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-universal-000000?logo=apple&logoColor=white)](https://github.com/Prem01-cyber/snapx/releases/latest)
 
-snapx captures your screen, lets you select a region across multiple monitors, annotate the result, and save or copy it — without Electron, without a browser, and without proprietary GNOME-only APIs. It is written in **C** with **GTK4** and **Cairo**, designed to feel at home on Fedora, GNOME, KDE, Windows, and macOS.
+[**Download**](https://github.com/Prem01-cyber/snapx/releases/latest) · [Quick start](#quick-start) · [Features](#features) · [Build from source](#building-from-source) · [Changelog](CHANGELOG.md)
 
-**[Download the latest release](https://github.com/Prem01-cyber/snapx/releases/latest)** · [Report an issue](https://github.com/Prem01-cyber/snapx/issues) · [Changelog](CHANGELOG.md)
-
----
-
-## Downloads
-
-Pre-built binaries are on the [Releases](https://github.com/Prem01-cyber/snapx/releases/latest) page. File names include the version (e.g. `snapx-1.3.1-…`).
-
-| Platform | File (pattern) | Install |
-|----------|----------------|---------|
-| **Linux** (x86_64) | `snapx-*-x86_64.AppImage` | `chmod +x snapx-*-x86_64.AppImage && ./snapx-*-x86_64.AppImage` |
-| **Linux** (portable) | `snapx-*-linux-x86_64.tar.gz` | Extract and run `usr/bin/snapx` |
-| **Fedora / RHEL** (x86_64) | `snapx-*-*.x86_64.rpm` | `sudo dnf install ./snapx-*-*.x86_64.rpm` |
-| **Windows** (64-bit) | `snapx-*-win64-setup.exe` | Run the installer; launch **snapx** from the Start menu |
-| **macOS** (Apple Silicon / Intel) | `snapx-*-macos.dmg` | Open the DMG and drag **snapx** to Applications |
-
-> **Note:** CI attaches all platform builds to each [release tag](https://github.com/Prem01-cyber/snapx/releases). If a platform is missing, check the [Release workflow](https://github.com/Prem01-cyber/snapx/actions/workflows/release.yml) for that tag.
-
-### Linux distribution packages
-
-| Distro | Method |
-|--------|--------|
-| **Fedora / RHEL** | Download the `.rpm` from [Releases](https://github.com/Prem01-cyber/snapx/releases/latest), or build locally: `./packaging/linux/build-rpm.sh` |
-| **Arch Linux** | Build from [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD) with `makepkg -si` |
-| **Flatpak** | `flatpak install io.github.snapx` (bundle on [Releases](https://github.com/Prem01-cyber/snapx/releases/latest); Flathub submission pending) |
-
-### System requirements (runtime)
-
-| Platform | Requirement |
-|----------|-------------|
-| Linux (Wayland) | XDG Desktop Portal (`xdg-desktop-portal` + backend, e.g. `xdg-desktop-portal-gnome` on GNOME) |
-| Linux (Wayland, global hotkeys) | Portal **GlobalShortcuts** (GNOME 45+ / KDE Plasma 6+); install snapx so `io.github.snapx.desktop` and `snapx` are on `PATH` |
-| Linux (Wayland, optional ScreenCast) | PipeWire |
-| Linux (X11) | X11 session with RandR |
-| Windows | Windows 10 or newer (DXGI; GDI fallback on older builds) |
-| macOS | macOS 10.13+ (ScreenCaptureKit on 12.3+) |
-
-The Linux AppImage bundles GTK4 and image libraries. It still relies on your session’s **portal** for Wayland capture (same as most screenshot tools on modern desktops).
-
-### macOS Gatekeeper
-
-Release builds are **not notarized**. On first launch: right-click the app → **Open**, or allow in **System Settings → Privacy & Security**.
+</div>
 
 ---
 
 ## Why snapx?
 
-| | snapx | Typical Electron capture apps |
-|---|--------|-------------------------------|
-| **Runtime** | Native C + GTK4 | Chromium + Node |
-| **Memory** | Lightweight | Heavy |
-| **Wayland** | XDG Screenshot portal (same family as GNOME Print Screen) | Often broken or portal-incompatible |
-| **Multi-monitor region** | Full-desktop grab + **per-monitor 1:1 freeze overlay** | Often one scaled mini-map |
-| **Annotation** | Built-in Cairo canvas | Varies |
-| **Automation** | Full headless CLI | Rare |
+Most screenshot tools are either heavyweight Electron apps or tied to one desktop. snapx is written in **C** with **GTK 4** and **Cairo**: it starts instantly, uses a few megabytes of memory, and captures correctly on **Wayland, X11, Windows, and macOS** using each platform's native APIs. It produces polished, share-ready images — backgrounds, padding, shadows and all — and drives the same engine from a scriptable headless CLI.
+
+| | snapx | Typical Electron capture app |
+|---|---|---|
+| **Runtime** | Native C + GTK 4 | Chromium + Node |
+| **Memory / startup** | Lightweight, instant | Heavy, slow cold start |
+| **Wayland** | XDG Desktop Portal (same family as GNOME Print Screen) | Often broken or portal-incompatible |
+| **Multi-monitor region** | Full-desktop grab + per-monitor 1:1 freeze overlay | Often one scaled mini-map |
+| **Beautiful export** | Built-in (background, padding, shadow, rounded corners) | Plugin or absent |
+| **Automation** | Full headless CLI + D-Bus | Rare |
 
 ---
 
-## Features
+## Highlights
 
-| Category | Details |
-|----------|---------|
-| **Capture modes** | Full screen, single monitor, region, active window, delayed capture |
-| **Multi-monitor** | Enumerate monitors; region selection spans edges with correct HiDPI slicing |
-| **Annotation** | Rectangle, arrow, pen, text (popover entry), blur/pixelate, highlight, numbered callouts, redaction |
-| **Region overlay** | Magnifier loupe (hold Space), snap-to-window highlight |
-| **Upload / share** | Imgur or custom POST URL; copy link after upload (optional libcurl) |
-| **OCR** | Copy text from capture (optional Tesseract; language in Settings) |
-| **Workflow** | Pin to screen, post-capture crop, recent-captures sidebar, session D-Bus IPC |
-| **Background** | Close-to-tray, `--background`, autostart desktop file |
-| **Output** | PNG, JPEG (quality 1–100), WebP |
-| **Clipboard** | Manual copy or auto-copy after each capture (Settings) |
-| **Hotkeys** | Global hotkeys: X11 & Windows (native); **Wayland** via portal GlobalShortcuts; in-app shortcuts always available |
-| **GUI** | GTK4 (GTK3 fallback when GTK4 is unavailable) |
-| **CLI** | Headless mode for scripts (`--no-gui`) |
-| **Settings** | INI config with live filename preview |
+- 🖥️ **Every surface** — full screen, a single monitor, a dragged region, or the active window. Multi-monitor and HiDPI aware.
+- 🎨 **Annotate** — rectangle, ellipse, line, arrow, freehand pen, text, highlight, numbered callouts, blur/pixelate, redaction, plus a colour **eyedropper**. Undo/redo throughout.
+- ✨ **Beautiful export** — wrap any capture in padding, a solid/gradient/transparent background, rounded corners and a soft drop shadow. Live preview, then copy or save. Perfect for docs, slides and social posts.
+- 🔤 **Copy text (OCR)** — pull text straight out of a capture (optional Tesseract).
+- ☁️ **Share** — upload to Imgur or a custom endpoint and copy the link (optional libcurl).
+- 📌 **Workflow** — pin captures on top, post-capture crop, recent-captures sidebar, reveal-in-folder, auto-copy, delayed capture.
+- ⌨️ **Hotkeys everywhere** — native global shortcuts on X11/Windows; portal `GlobalShortcuts` on Wayland; in-app shortcuts always available.
+- 🤖 **Scriptable** — full headless CLI (`--no-gui`) and a session D-Bus API.
+- 🪶 **Native & small** — GTK 4 (GTK 3 fallback), Cairo, platform-native capture. No browser engine.
 
 ---
 
-## Compatibility
+## Install
 
-| OS | Session / API | Capture backend | GUI |
-|----|---------------|-----------------|-----|
-| **Linux** | Wayland + portal | XDG Screenshot (default); optional ScreenCast + PipeWire | GTK4 / GTK3 |
-| **Linux** | X11 / Xorg | libX11 + XRandR + XFixes | GTK4 / GTK3 |
-| **Windows 10/11** | — | DXGI Desktop Duplication | GTK4 (MSYS2) |
-| **Windows 8** | — | GDI BitBlt | GTK4 (MSYS2) |
-| **macOS 12.3+** | — | ScreenCaptureKit | GTK4 (Homebrew) |
-| **macOS 10.13–12.2** | — | CoreGraphics | GTK3 / GTK4 |
+Pre-built binaries are on the [**Releases**](https://github.com/Prem01-cyber/snapx/releases/latest) page (file names include the version).
 
-**Desktop environments tested or intended:** GNOME (Fedora Workstation), KDE Plasma, Xfce (X11), Windows 10/11, macOS.
+| Platform | File pattern | Install |
+|----------|--------------|---------|
+| **Linux** — AppImage | `snapx-*-x86_64.AppImage` | `chmod +x snapx-*.AppImage && ./snapx-*.AppImage` |
+| **Linux** — portable | `snapx-*-linux-x86_64.tar.gz` | Extract, run `usr/bin/snapx` |
+| **Fedora / RHEL** | `snapx-*.x86_64.rpm` | `sudo dnf install ./snapx-*.rpm` |
+| **Arch** | [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD) | `makepkg -si` |
+| **Flatpak** | bundle on Releases | `flatpak install io.github.snapx` *(Flathub submission pending)* |
+| **Windows 10/11** | `snapx-*-win64-setup.exe` | Run the installer; launch **snapx** from Start |
+| **macOS** | `snapx-*-macos.dmg` | Open the DMG, drag **snapx** to Applications |
 
-**Wayland note:** Third-party apps cannot call GNOME Shell’s private screenshot APIs. snapx uses the same **XDG Desktop Portal** stack as other compliant tools. On Fedora/GNOME this matches built-in screenshot behavior when `wayland_capture_prefer = screenshot` (default).
+> **macOS Gatekeeper:** release builds aren't notarized. On first launch, right-click the app → **Open**, or allow it in **System Settings → Privacy & Security**.
+
+**Runtime requirements**
+
+| Platform | Needs |
+|----------|-------|
+| Linux (Wayland) | `xdg-desktop-portal` + a backend (e.g. `xdg-desktop-portal-gnome`); PipeWire for the ScreenCast fallback |
+| Linux (Wayland global hotkeys) | Portal **GlobalShortcuts** (GNOME 45+ / KDE Plasma 6+); snapx installed so `snapx` and `io.github.snapx.desktop` are on `PATH` |
+| Linux (X11) | X11 session with RandR |
+| Windows | Windows 10+ (DXGI; GDI fallback on Windows 8) |
+| macOS | macOS 10.13+ (ScreenCaptureKit on 12.3+) |
 
 ---
 
@@ -114,66 +83,24 @@ Release builds are **not notarized**. On first launch: right-click the app → *
 snapx
 ```
 
-1. Click **Region**, **Full screen**, **Monitor**, or **Window** in the header bar.
-2. For region mode: drag on the frozen overlay, press **Enter** to confirm or **Escape** to cancel.
-3. Annotate, then **Save** (`Ctrl+S`) or **Copy** (`Ctrl+C`).
+1. Click **Screen**, **Region**, **Monitor**, or **Window** in the header bar.
+2. In region mode, drag on the frozen overlay; **Enter** confirms, **Escape** cancels.
+3. Annotate, optionally click **Beautify…**, then **Save** (`Ctrl+S`) or **Copy** (`Ctrl+C`).
 
-Default global hotkey: **`Super+Shift+S`** (Settings → Shortcuts, or `~/.config/snapx/config.ini`). On Wayland, approve global shortcuts in the portal dialog the first time you run snapx.
+Default global hotkey: **`Super+Shift+S`**. On Wayland, approve global shortcuts in the portal dialog the first time you run snapx.
 
 ### CLI (headless)
 
 ```bash
-# Full screen → file
-snapx -m fullscreen -n -o ~/Pictures/screenshot.png
-
-# Region (opens overlay)
-snapx -m region
-
-# Active window → clipboard + file
-snapx -m active -c -o ~/Pictures/window.png
-
-# Monitor 1, JPEG quality 85
-snapx -m monitor -M 1 -f jpeg -q 85 -n -o ~/Pictures/monitor1.jpg
-
-# Upload and copy URL (headless; set imgur_client_id in config.ini)
-snapx -n -m region -o /tmp/s.png --upload --copy-url
+snapx -m fullscreen -n -o ~/Pictures/shot.png        # full screen → file
+snapx -m region                                       # region (opens overlay)
+snapx -m active -c -o ~/Pictures/window.png           # active window → clipboard + file
+snapx -m monitor -M 1 -f jpeg -q 85 -n -o mon1.jpg    # monitor 1, JPEG q85
+snapx -n -m region -o /tmp/s.png --upload --copy-url  # capture, upload, copy URL
 ```
 
-### Upload configuration
-
-```ini
-[upload]
-service = imgur          ; imgur | custom | none
-imgur_client_id =        ; from https://api.imgur.com/oauth2/addclient (anonymous)
-custom_url =             ; e.g. https://paste.example.com/upload
-copy_url_after_upload = 1
-auto_upload = 0
-```
-
-Build with libcurl for upload support: `sudo dnf install libcurl-devel` (Fedora) then reconfigure CMake.
-
-### D-Bus automation
-
-When the GUI is running, snapx registers **`io.github.snapx`** on the session bus:
-
-```bash
-gdbus call --session -d io.github.snapx -o /io/github/snapx \
-  -m io.github.snapx.CaptureRegion
-gdbus call --session -d io.github.snapx -o /io/github/snapx \
-  -m io.github.snapx.GetLastPath
-gdbus call --session -d io.github.snapx -o /io/github/snapx \
-  -m io.github.snapx.Save s "$HOME/Pictures/out.png"
-```
-
-### Background / autostart
-
-```bash
-snapx --background
-```
-
-Copy [`packaging/linux/io.github.snapx-autostart.desktop`](packaging/linux/io.github.snapx-autostart.desktop) to `~/.config/autostart/` to launch at login. Enable **Close to tray** in Settings to hide instead of quitting.
-
-### CLI options
+<details>
+<summary><b>All CLI options</b></summary>
 
 | Option | Description |
 |--------|-------------|
@@ -184,43 +111,79 @@ Copy [`packaging/linux/io.github.snapx-autostart.desktop`](packaging/linux/io.gi
 | `-f, --format` | `png` \| `jpeg` \| `webp` |
 | `-q, --quality` | JPEG quality 1–100 (default 90) |
 | `-c, --clipboard` | Also copy to clipboard |
-| `--upload` | Upload after capture (uses `[upload]` config; requires libcurl build) |
-| `--copy-url` | Copy upload URL to clipboard (with `--upload`) |
+| `--upload` | Upload after capture (uses `[upload]` config; needs libcurl) |
+| `--copy-url` | Copy the upload URL to clipboard (with `--upload`) |
 | `--background` | Start hidden; keep running for hotkeys/tray |
 | `-n, --no-gui` | Capture without showing the main window |
-| `-v, --version` | Show version |
-| `-h, --help` | Show help |
+| `-v, --version` / `-h, --help` | Version / help |
+
+</details>
+
+### D-Bus automation
+
+While the GUI runs, snapx registers **`io.github.snapx`** on the session bus:
+
+```bash
+gdbus call --session -d io.github.snapx -o /io/github/snapx -m io.github.snapx.CaptureRegion
+gdbus call --session -d io.github.snapx -o /io/github/snapx -m io.github.snapx.GetLastPath
+gdbus call --session -d io.github.snapx -o /io/github/snapx -m io.github.snapx.Save s "$HOME/Pictures/out.png"
+```
 
 ---
 
-## Wayland (Fedora / GNOME)
+## Features
 
-| Path | Like built-in Print Screen? | Default? |
-|------|----------------------------|----------|
-| **Screenshot portal** | Yes | **Yes** |
-| **ScreenCast + PipeWire** | No (one frame) | Fallback only |
+| Area | What you get |
+|------|--------------|
+| **Capture** | Full screen, single monitor, dragged region, active window, delayed capture, optional cursor |
+| **Multi-monitor** | Enumerates monitors; region selection spans edges with correct HiDPI slicing and per-monitor 1:1 freeze overlay |
+| **Annotation** | Rectangle, ellipse, line, arrow, pen, text, highlight, numbered callout, blur/pixelate, redaction, eyedropper; undo/redo |
+| **Beautiful export** | Padding, solid/gradient/transparent background, rounded corners, drop shadow — live preview, copy or save |
+| **Region overlay** | Magnifier loupe (hold **Space**), snap-to-window highlight |
+| **OCR** | Copy text from a capture (optional Tesseract; language in Settings) |
+| **Share** | Imgur or custom POST endpoint; copy link after upload (optional libcurl) |
+| **Workflow** | Pin to screen, post-capture crop, recents sidebar, reveal-in-folder, auto-copy after capture |
+| **Output** | PNG, JPEG (quality 1–100), WebP; configurable filename patterns with date/counter tokens |
+| **Background** | System tray, close-to-tray, `--background`, autostart desktop entry |
+| **Automation** | Headless CLI and session D-Bus API |
 
-Set in `~/.config/snapx/config.ini`:
+### ✨ Beautiful export
+
+Click **Beautify…** in the action bar to open a live editor:
+
+- **Padding** around the screenshot.
+- **Background**: a flat colour, a two-colour **gradient**, or **transparent** (PNG/WebP).
+- **Rounded corners** on the screenshot.
+- A soft **drop shadow** with adjustable spread.
+
+Toggle **Apply on Save/Copy/Upload** to make every export use these settings automatically — one click to share-ready images. Settings persist in your config.
+
+### Annotation tools
+
+`Rect` · `Ellipse` · `Line` · `Arrow` · `Pen` · `Text` · `Blur` · `Hi-lite` · `Callout` · `Redact` — pick a colour, or use **Pick** (eyedropper) to sample one from the image. Everything is undoable (`Ctrl+Z` / `Ctrl+Y`).
+
+---
+
+## Platform & Wayland notes
+
+| OS | Session / API | Capture backend | GUI |
+|----|---------------|-----------------|-----|
+| Linux | Wayland + portal | XDG Screenshot (default); optional ScreenCast + PipeWire | GTK 4 / GTK 3 |
+| Linux | X11 | libX11 + XRandR + XFixes | GTK 4 / GTK 3 |
+| Windows 10/11 | — | DXGI Desktop Duplication | GTK 4 (MSYS2) |
+| Windows 8 | — | GDI BitBlt | GTK 4 |
+| macOS 12.3+ | — | ScreenCaptureKit | GTK 4 |
+| macOS 10.13–12.2 | — | CoreGraphics | GTK 3 / 4 |
+
+Third-party apps cannot call GNOME Shell's private screenshot APIs, so on Wayland snapx uses the standard **XDG Desktop Portal** stack — the same path as the built-in Print Screen. Region capture takes one full-desktop frame, then shows a native 1:1 freeze on each monitor so selection stays aligned on HiDPI and multi-monitor layouts. Capture runs on a background thread to keep the UI responsive.
 
 ```ini
+# ~/.config/snapx/config.ini
 [capture]
-wayland_capture_prefer = screenshot   ; or screencast
+wayland_capture_prefer = screenshot   ; or "screencast" (one-frame fallback)
 ```
 
-**Region capture** takes one full-desktop screenshot, then shows a **native 1:1 freeze on each monitor** so selection stays aligned on HiDPI and multi-monitor layouts.
-
-Capture runs on a **background thread** so the UI stays responsive while the portal completes.
-
-### Global hotkeys on Wayland
-
-On Wayland, system-wide shortcuts use **`org.freedesktop.portal.GlobalShortcuts`** (not raw key grabs):
-
-1. Install snapx (RPM, AppImage, or `cmake --install`) so **`snapx` is in `PATH`** and **`io.github.snapx.desktop`** is installed.
-2. Launch from the app menu (or an installed `snapx` binary), not a raw `./build/snapx` from the build tree.
-3. On first run, approve shortcuts in the **portal dialog** (GNOME Settings → Keyboard also lists them afterward).
-4. Defaults: **`Super+Shift+S`** (open snapx), **`Ctrl+Shift+1`–`4`** (capture modes).
-
-On **X11** and **Windows**, global hotkeys use the native grab APIs and do not need the portal.
+**Global hotkeys on Wayland** use `org.freedesktop.portal.GlobalShortcuts` (not raw key grabs): install snapx so `snapx` is on `PATH`, launch it from the app menu, and approve the shortcuts in the portal dialog on first run. On X11 and Windows, global hotkeys use native grab APIs and need no portal.
 
 ---
 
@@ -232,77 +195,20 @@ On **X11** and **Windows**, global hotkeys use the native grab APIs and do not n
 | macOS | `~/Library/Application Support/snapx/config.ini` |
 | Windows | `%APPDATA%\snapx\config.ini` |
 
-### Example `config.ini`
+Everything is editable in **Settings**, or directly in the INI file. Filename patterns support date tokens (`%Y %m %d %H %M %S`), an auto-increment counter (`%n`, or `%d`/`%03d` for unpadded/zero-padded), and `%%` for a literal percent — counters scan the save directory for the next free number.
 
-```ini
-[save]
-save_dir         = /home/user/Pictures/Screenshots
-filename_pattern = screenshot_%Y%m%d_%H%M%S
+### Keyboard shortcuts (defaults)
 
-[capture]
-default_mode     = 0
-default_delay    = 0
-show_cursor      = 0
-wayland_capture_prefer = screenshot
+| Shortcut | Action | | Shortcut | Action |
+|----------|--------|---|----------|--------|
+| `Super+Shift+S` | Global capture (default mode) | | `Ctrl+S` | Save |
+| `Ctrl+Shift+1` | Full screen | | `Ctrl+C` | Copy to clipboard |
+| `Ctrl+Shift+2` | Monitor | | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| `Ctrl+Shift+3` | Region | | `Ctrl+0` | Fit view |
+| `Ctrl+Shift+4` | Active window | | `Ctrl +` / `Ctrl -` | Zoom in / out |
+| `Return` | Confirm region | | `Escape` | Cancel region |
 
-[output]
-default_format   = 0
-jpeg_quality     = 90
-auto_clipboard   = 1
-play_sound       = 1
-
-[shortcuts]
-global_capture   = super+shift+s
-capture_fullscreen = ctrl+shift+1
-capture_monitor  = ctrl+shift+2
-capture_region   = ctrl+shift+3
-capture_window   = ctrl+shift+4
-save             = ctrl+s
-copy             = ctrl+c
-undo             = ctrl+z
-redo             = ctrl+y
-fit              = ctrl+0
-zoom_in          = ctrl+plus
-zoom_out         = ctrl+minus
-region_confirm   = return
-region_cancel    = escape
-```
-
-### Filename pattern tokens
-
-| Token | Expands to |
-|-------|------------|
-| `%Y` `%m` `%d` | Year, month, day (in `%Y%m%d`, the `%d` is the day) |
-| `%H` `%M` `%S` | Hour, minute, second |
-| `%n` | Auto-increment counter (4 digits: `0001`, `0002`, …) |
-| `%d` `%i` `%u` | Auto-increment counter (unpadded: `1`, `2`, …) |
-| `%03d` `%04d` … | Zero-padded counter (`001`, `0001`, …) |
-| `%%` | Literal `%` |
-
-Counters scan your save directory and pick the next free number. Examples: `image_%d` → `image_1.png`, `image_%03d` → `image_001.png`.
-
-All shortcuts can be changed in **Settings → Shortcuts** (Record button captures a key press).
-
----
-
-## Keyboard shortcuts (defaults)
-
-| Shortcut | Action |
-|----------|--------|
-| `Super+Shift+S` | Global capture — uses default mode from Capture tab (X11/Windows; in-app on Wayland) |
-| `Ctrl+Shift+1` | Capture full screen |
-| `Ctrl+Shift+2` | Capture monitor |
-| `Ctrl+Shift+3` | Capture region |
-| `Ctrl+Shift+4` | Capture active window |
-| `Ctrl+S` | Save |
-| `Ctrl+C` | Copy to clipboard |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / redo annotation |
-| `Ctrl+0` | Fit view |
-| `Ctrl+Plus` / `Ctrl+Minus` | Zoom in / out |
-| `Escape` | Cancel region overlay |
-| `Return` | Confirm region selection |
-
-Per-mode capture shortcuts work when snapx is focused. On X11 and Windows they may also be registered globally if the key combo is not already grabbed by another app.
+All shortcuts are remappable in **Settings → Shortcuts**.
 
 ---
 
@@ -310,72 +216,71 @@ Per-mode capture shortcuts work when snapx is focused. On X11 and Windows they m
 
 ### Prerequisites
 
-**Fedora:**
+<details open>
+<summary><b>Fedora</b></summary>
+
 ```bash
 sudo dnf install cmake gcc gtk4-devel cairo-devel glib2-devel gdk-pixbuf2-devel \
     libX11-devel libXrandr-devel libXfixes-devel libpng-devel libjpeg-turbo-devel \
     libwebp-devel pipewire-devel dbus-devel librsvg2
 ```
+</details>
 
-**Ubuntu / Debian:**
+<details>
+<summary><b>Ubuntu / Debian</b></summary>
+
 ```bash
 sudo apt install cmake gcc libgtk-4-dev libcairo2-dev libglib2.0-dev \
     libgdk-pixbuf-2.0-dev libx11-dev libxrandr-dev libxfixes-dev \
     libpng-dev libjpeg-turbo8-dev libwebp-dev libpipewire-0.3-dev libdbus-1-dev librsvg2-bin
 ```
+</details>
 
-**Arch:** `sudo pacman -S cmake gcc gtk4 cairo glib2 gdk-pixbuf2 libx11 libxrandr libxfixes libpng libjpeg-turbo libwebp pipewire dbus librsvg`
+<details>
+<summary><b>Arch / macOS / Windows</b></summary>
 
-**macOS:** `brew install cmake gtk4 cairo glib gdk-pixbuf libpng libjpeg-turbo webp`
+- **Arch:** `sudo pacman -S cmake gcc gtk4 cairo glib2 gdk-pixbuf2 libx11 libxrandr libxfixes libpng libjpeg-turbo libwebp pipewire dbus librsvg`
+- **macOS:** `brew install cmake gtk4 cairo glib gdk-pixbuf libpng libjpeg-turbo webp`
+- **Windows (MSYS2 UCRT64):** see [`packaging/windows/build-installer.sh`](packaging/windows/build-installer.sh)
+</details>
 
-**Windows (MSYS2 UCRT64):** see [packaging/windows/build-installer.sh](packaging/windows/build-installer.sh)
+Optional features are auto-detected: **libcurl** enables upload, **Tesseract** enables OCR, **libwebp** enables WebP output.
 
 ### Build
 
 ```bash
 git clone https://github.com/Prem01-cyber/snapx.git
 cd snapx
-bash packaging/icons/generate-icons.sh   # optional if PNGs missing
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ./build/snapx --version
-sudo cmake --install build   # optional
+sudo cmake --install build        # optional
 ```
 
-### Packaging locally
+### Packaging
 
 ```bash
-./packaging/linux/build-appimage.sh 1.3.1      # Linux AppImage + tarball
-./packaging/linux/build-rpm.sh 1.3.1           # Fedora/RHEL RPM (on Fedora)
-./packaging/macos/build-dmg.sh 1.3.1           # macOS only
-# Windows (MSYS2): ./packaging/windows/build-installer.sh 1.3.1
+./packaging/linux/build-appimage.sh 2.0.0      # AppImage + tarball
+./packaging/linux/build-rpm.sh 2.0.0           # Fedora/RHEL RPM
+./packaging/macos/build-dmg.sh 2.0.0           # macOS
+# Windows (MSYS2): ./packaging/windows/build-installer.sh 2.0.0
 ```
 
----
-
-## Releasing (maintainers)
-
-```bash
-git tag -a v1.3.1 -m "snapx 1.3.1"
-git push origin v1.3.1
-```
-
-GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)) builds and uploads the AppImage, Windows installer, and macOS DMG to the GitHub Release.
+Tagging `vX.Y.Z` triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds and uploads the AppImage, Windows installer, and macOS DMG to the GitHub Release.
 
 ---
 
 ## Troubleshooting
 
-| Symptom | What to do |
-|---------|------------|
-| `Using Screenshot portal (GNOME/Fedora-style)...` | Normal — default capture path |
-| `Removed portal screenshot file: ...` | Portal temp file loaded and deleted |
-| `Attempting ScreenCast portal capture...` | Fallback or `wayland_capture_prefer=screencast` |
-| Stuck at `capturing frame...` (PipeWire) | Use `wayland_capture_prefer = screenshot` |
-| `pw_stream_destroy called from wrong context` | Update snapx; prefer screenshot portal |
+| Symptom | Fix |
+|---------|-----|
+| Stuck at `capturing frame…` (PipeWire) | Set `wayland_capture_prefer = screenshot` |
 | Portal permission denied | Allow screen capture in system settings |
-| AppImage won’t run | `chmod +x` and ensure FUSE/`libfuse2` on older distros |
-| `VK_SUBOPTIMAL_KHR` Gdk-WARNING | Harmless Vulkan resize warning; safe to ignore |
+| Global hotkeys don't fire on Wayland | Install snapx, launch from the app menu, approve the portal dialog |
+| AppImage won't run | `chmod +x` it; ensure FUSE / `libfuse2` on older distros |
+| `VK_SUBOPTIMAL_KHR` Gdk-WARNING | Harmless Vulkan resize warning; ignore |
+
+Run `snapx --info` to print the detected session, backend, and capability status.
 
 ---
 
@@ -383,23 +288,27 @@ GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)
 
 ```
 snapx/
-├── src/           Application source (capture, UI, annotation, output)
-├── resources/     Icons, CSS, GResource bundle
-├── packaging/     AppImage, Windows installer, macOS DMG, RPM, PKGBUILD
-├── .github/       CI and release workflows
-└── CHANGELOG.md
+├── src/          Application source
+│   ├── capture/    Platform capture backends (X11, Wayland, Windows, macOS)
+│   ├── ui/         GTK windows, toolbar, dialogs, tray, history
+│   ├── annotation/ Cairo annotation canvas + drawing
+│   ├── output/     Save/encode, clipboard, upload, OCR, beautify
+│   └── utils/      Config, shortcuts, hotkeys, monitors
+├── resources/    Icons, CSS, GResource bundle
+├── packaging/    AppImage, RPM, PKGBUILD, Windows installer, macOS DMG
+└── .github/      CI and release workflows
 ```
 
 ---
 
 ## Contributing
 
-Contributions are welcome. Open an issue or pull request on [GitHub](https://github.com/Prem01-cyber/snapx).
+Issues and pull requests are welcome on [GitHub](https://github.com/Prem01-cyber/snapx/issues). Please keep changes warning-clean (`-Wall -Wextra -Werror`) and test on at least one platform.
 
 ## License
 
-**snapx 1.3.1** is released under the **MIT License** (Copyright © 2026 snapx Team). See [LICENSE](LICENSE) for the full text.
+Released under the **MIT License** — Copyright © 2026 the snapx authors. See [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-Built with GTK, Cairo, XDG Desktop Portals, PipeWire, and platform-native capture APIs. Inspired by the need for a **small, honest** screenshot tool on modern Wayland desktops.
+Built with GTK, Cairo, XDG Desktop Portals, PipeWire, and platform-native capture APIs — for a small, honest screenshot tool on modern desktops.

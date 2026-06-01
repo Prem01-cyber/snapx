@@ -179,10 +179,15 @@ SnapxImage *snapx_beautify_apply(const SnapxImage *src,
         int spread = cfg->shadow_size > 0 ? cfg->shadow_size : 24;
         if (spread > pad) spread = pad;            /* keep within the canvas */
         double dy = spread * 0.35;                 /* offset shadow downward */
-        /* Layered translucent rounded rects approximate a soft penumbra. */
-        for (int i = spread; i >= 1; i--) {
-            double grow = i;
-            double a = 0.38 * (1.0 - (double)i / (spread + 1)) / 2.2;
+        /* Layered translucent rounded rects approximate a soft penumbra.
+         * Cap the layer count so a large spread on a 4K image stays fast
+         * (each layer is a full-canvas fill); the look is unchanged. */
+        int layers = spread;
+        if (layers > 24) layers = 24;
+        if (layers < 1)  layers = 1;
+        for (int k = layers; k >= 1; k--) {
+            double grow = (double)k / layers * spread;
+            double a = 0.38 * (1.0 - (double)k / (layers + 1)) / 2.2;
             cairo_set_source_rgba(cr, 0, 0, 0, a);
             rounded_rect(cr, ix - grow, iy - grow + dy,
                          iw + grow*2, ih + grow*2, radius + grow);

@@ -462,7 +462,7 @@ GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
     gtk_widget_set_margin_top(bar,     3);
     gtk_widget_set_margin_bottom(bar,  3);
 
-    /* ── Tool toggle buttons ─────────────────────────────────────────────── */
+    /* ── Tool toggle buttons (grouped: shapes | freehand+text | effects) ─── */
     for (int i = 0; i < NUM_TOOLS; i++) {
         GtkWidget *btn = gtk_toggle_button_new_with_label(TOOLS[i].label);
         gtk_widget_add_css_class(btn, "snapx-tool");
@@ -475,6 +475,18 @@ GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
         gtk_box_pack_start(GTK_BOX(bar), btn, FALSE, FALSE, 1);
 #endif
         g_tb.tool_btns[i] = btn;
+
+        /* Separate logical groups so 10 tools don't read as one wall. */
+        if (TOOLS[i].id == SNAPX_TOOL_ARROW || TOOLS[i].id == SNAPX_TOOL_TEXT) {
+            GtkWidget *gsep = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
+            gtk_widget_set_margin_start(gsep, 3);
+            gtk_widget_set_margin_end(gsep, 3);
+#ifdef SNAPX_USE_GTK4
+            gtk_box_append(GTK_BOX(bar), gsep);
+#else
+            gtk_box_pack_start(GTK_BOX(bar), gsep, FALSE, FALSE, 3);
+#endif
+        }
     }
     {
         int active_idx = 0;

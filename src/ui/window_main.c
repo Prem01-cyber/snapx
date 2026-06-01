@@ -907,9 +907,30 @@ static void snapx_hide_for_capture(MainWindow *mw)
     if (gtk_widget_get_visible(GTK_WIDGET(mw->win)))
         snapx_save_window_state(mw);
     gtk_widget_set_visible(GTK_WIDGET(mw->win), FALSE);
-    for (int i = 0; i < 15; i++)
+
+    /*
+     * Wait until the snapx window is actually gone before capturing, but adapt
+     * to how fast the compositor is instead of always blocking for a fixed
+     * 200 ms.  We pump the main loop until the toplevel is unmapped (bounded so
+     * a slow/blocking compositor can never hang the capture), then add a short
+     * margin for the revealed area to repaint.  On a typical desktop this
+     * settles in well under the cap, making every capture feel instant.
+     */
+    const int max_wait_us = 250 * 1000;   /* hard ceiling */
+    const int step_us     =   5 * 1000;
+    int waited = 0;
+    while (waited < max_wait_us) {
+        while (g_main_context_pending(NULL))
+            g_main_context_iteration(NULL, FALSE);
+        if (!gtk_widget_get_mapped(GTK_WIDGET(mw->win)))
+            break;
+        g_usleep(step_us);
+        waited += step_us;
+    }
+    /* Repaint margin so the compositor presents the frame without snapx. */
+    g_usleep(90 * 1000);
+    while (g_main_context_pending(NULL))
         g_main_context_iteration(NULL, FALSE);
-    g_usleep(200 * 1000);
 }
 
 static gboolean clipboard_idle_cb(gpointer data)

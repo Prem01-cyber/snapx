@@ -148,6 +148,8 @@ static void pref_row_add_switch(GtkWidget *rows, const char *label, GtkWidget *s
 }
 
 static void on_record_clicked(GtkButton *btn, gpointer entry);
+static GtkWidget *new_rgb_button(double r, double g, double b, const char *title);
+static void read_rgb_button(GtkWidget *btn, double *r, double *g, double *b);
 
 static void on_clear_shortcut(GtkButton *btn, gpointer entry)
 {
@@ -261,6 +263,15 @@ typedef struct {
     GtkWidget   *auto_upload_sw;
     GtkWidget   *tool_dd;
     GtkWidget   *color_btn;
+    /* Beautiful export */
+    GtkWidget   *bf_enable_sw;
+    GtkWidget   *bf_padding_spin;
+    GtkWidget   *bf_bg_dd;
+    GtkWidget   *bf_color1;
+    GtkWidget   *bf_color2;
+    GtkWidget   *bf_corner_spin;
+    GtkWidget   *bf_shadow_sw;
+    GtkWidget   *bf_shadow_spin;
     GtkWidget   *sc_global;
     GtkWidget   *sc_capture_full;
     GtkWidget   *sc_capture_monitor;
@@ -426,6 +437,21 @@ static void on_ok_clicked(GtkButton *btn, gpointer user_data)
     c->default_tool   = (SnapxAnnotationTool)
         gtk_drop_down_get_selected(GTK_DROP_DOWN(dw->tool_dd));
 
+    c->beautify.enabled       = gtk_switch_get_active(GTK_SWITCH(dw->bf_enable_sw));
+    c->beautify.padding       = (int)gtk_spin_button_get_value(
+        GTK_SPIN_BUTTON(dw->bf_padding_spin));
+    c->beautify.bg_type       = (SnapxBeautifyBg)
+        gtk_drop_down_get_selected(GTK_DROP_DOWN(dw->bf_bg_dd));
+    read_rgb_button(dw->bf_color1, &c->beautify.bg_r,
+                    &c->beautify.bg_g, &c->beautify.bg_b);
+    read_rgb_button(dw->bf_color2, &c->beautify.bg_r2,
+                    &c->beautify.bg_g2, &c->beautify.bg_b2);
+    c->beautify.corner_radius = (int)gtk_spin_button_get_value(
+        GTK_SPIN_BUTTON(dw->bf_corner_spin));
+    c->beautify.shadow        = gtk_switch_get_active(GTK_SWITCH(dw->bf_shadow_sw));
+    c->beautify.shadow_size   = (int)gtk_spin_button_get_value(
+        GTK_SPIN_BUTTON(dw->bf_shadow_spin));
+
     c->magnifier_enabled   = gtk_switch_get_active(GTK_SWITCH(dw->magnifier_sw));
     c->magnifier_zoom      = (int)gtk_spin_button_get_value(
         GTK_SPIN_BUTTON(dw->magnifier_zoom_spin));
@@ -524,6 +550,35 @@ static GtkWidget *new_color_button(SnapxConfig *config)
     gtk_color_button_set_title(GTK_COLOR_BUTTON(color_btn), "Default annotation color");
     return color_btn;
 #endif
+}
+
+static GtkWidget *new_rgb_button(double r, double g, double b, const char *title)
+{
+    GdkRGBA c = { r, g, b, 1.0 };
+#if GTK_CHECK_VERSION(4, 10, 0)
+    GtkColorDialog *cd = gtk_color_dialog_new();
+    gtk_color_dialog_set_title(cd, title);
+    gtk_color_dialog_set_with_alpha(cd, FALSE);
+    GtkWidget *btn = gtk_color_dialog_button_new(cd);
+    gtk_color_dialog_button_set_rgba(GTK_COLOR_DIALOG_BUTTON(btn), &c);
+    return btn;
+#else
+    GtkWidget *btn = gtk_color_button_new_with_rgba(&c);
+    gtk_color_button_set_title(GTK_COLOR_BUTTON(btn), title);
+    return btn;
+#endif
+}
+
+static void read_rgb_button(GtkWidget *btn, double *r, double *g, double *b)
+{
+    GdkRGBA c = { 0, 0, 0, 1 };
+#if GTK_CHECK_VERSION(4, 10, 0)
+    const GdkRGBA *cc = gtk_color_dialog_button_get_rgba(GTK_COLOR_DIALOG_BUTTON(btn));
+    if (cc) c = *cc;
+#else
+    gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(btn), &c);
+#endif
+    *r = c.red; *g = c.green; *b = c.blue;
 }
 
 static GtkWidget *new_help_label(const char *text)
@@ -641,10 +696,12 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     GtkWidget *ann_rows = new_pref_group("Annotation defaults");
     gtk_box_append(GTK_BOX(cap_page), gtk_widget_get_parent(ann_rows));
 
+    /* Order MUST match the SnapxAnnotationTool enum values (index == enum). */
     const char *tools[] = { "Rectangle", "Arrow", "Pen", "Text",
-                             "Blur", "Highlight", "Callout", "Redact", NULL };
+                             "Blur", "Highlight", "Callout", "Redact",
+                             "Line", "Ellipse", NULL };
     GtkWidget *tool_dd = gtk_drop_down_new_from_strings(tools);
-    if ((unsigned)config->default_tool < 8u)
+    if ((unsigned)config->default_tool < 10u)
         gtk_drop_down_set_selected(GTK_DROP_DOWN(tool_dd),
                                    (guint)config->default_tool);
     pref_row_add_compact(ann_rows, "Default tool:", tool_dd);
@@ -708,6 +765,55 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     GtkWidget *sound_sw = gtk_switch_new();
     gtk_switch_set_active(GTK_SWITCH(sound_sw), config->play_sound);
     pref_row_add_switch(out_opt_rows, "Play sound on capture", sound_sw);
+
+    /* ── Beautiful export ──────────────────────────────────────────────── */
+    GtkWidget *bf_rows = new_pref_group("Beautiful export");
+    gtk_box_append(GTK_BOX(out_page), gtk_widget_get_parent(bf_rows));
+
+    GtkWidget *bf_enable_sw = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(bf_enable_sw), config->beautify.enabled);
+    pref_row_add_switch(bf_rows, "Apply on Save / Copy / Upload", bf_enable_sw);
+
+    GtkWidget *bf_padding_spin = gtk_spin_button_new_with_range(0, 240, 4);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(bf_padding_spin),
+                              (double)config->beautify.padding);
+    pref_row_add_compact(bf_rows, "Padding (px):", bf_padding_spin);
+
+    const char *bf_bgs[] = { "Solid", "Gradient", "Transparent", NULL };
+    GtkWidget *bf_bg_dd = gtk_drop_down_new_from_strings(bf_bgs);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(bf_bg_dd),
+                               (guint)config->beautify.bg_type);
+    pref_row_add_compact(bf_rows, "Background:", bf_bg_dd);
+
+    GtkWidget *bf_color1 = new_rgb_button(config->beautify.bg_r,
+                                          config->beautify.bg_g,
+                                          config->beautify.bg_b,
+                                          "Background colour");
+    pref_row_add_compact(bf_rows, "Colour:", bf_color1);
+
+    GtkWidget *bf_color2 = new_rgb_button(config->beautify.bg_r2,
+                                          config->beautify.bg_g2,
+                                          config->beautify.bg_b2,
+                                          "Gradient end colour");
+    pref_row_add_compact(bf_rows, "Gradient end:", bf_color2);
+
+    GtkWidget *bf_corner_spin = gtk_spin_button_new_with_range(0, 64, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(bf_corner_spin),
+                              (double)config->beautify.corner_radius);
+    pref_row_add_compact(bf_rows, "Corner radius (px):", bf_corner_spin);
+
+    GtkWidget *bf_shadow_sw = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(bf_shadow_sw), config->beautify.shadow);
+    pref_row_add_switch(bf_rows, "Drop shadow", bf_shadow_sw);
+
+    GtkWidget *bf_shadow_spin = gtk_spin_button_new_with_range(2, 80, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(bf_shadow_spin),
+                              (double)config->beautify.shadow_size);
+    pref_row_add_compact(bf_rows, "Shadow size (px):", bf_shadow_spin);
+
+    gtk_box_append(GTK_BOX(out_page), new_help_label(
+        "Wrap captures in a background, padding, rounded corners and a shadow. "
+        "Use the Beautify… button in the main window for a live preview."));
 
     GtkWidget *ocr_rows = new_pref_group("OCR");
     gtk_box_append(GTK_BOX(out_page), gtk_widget_get_parent(ocr_rows));
@@ -874,6 +980,14 @@ void snapx_settings_dialog_show(GtkWindow *parent, SnapxConfig *config)
     dw->auto_upload_sw   = auto_upload_sw;
     dw->tool_dd          = tool_dd;
     dw->color_btn        = color_btn;
+    dw->bf_enable_sw     = bf_enable_sw;
+    dw->bf_padding_spin  = bf_padding_spin;
+    dw->bf_bg_dd         = bf_bg_dd;
+    dw->bf_color1        = bf_color1;
+    dw->bf_color2        = bf_color2;
+    dw->bf_corner_spin   = bf_corner_spin;
+    dw->bf_shadow_sw     = bf_shadow_sw;
+    dw->bf_shadow_spin   = bf_shadow_spin;
     dw->sc_global        = sc_global;
     dw->sc_capture_full  = sc_capture_full;
     dw->sc_capture_monitor = sc_capture_monitor;

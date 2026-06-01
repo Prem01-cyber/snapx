@@ -1,5 +1,5 @@
 Name:           snapx
-Version:        1.3.1
+Version:        2.0.0
 Release:        1%{?dist}
 Summary:        Lightweight cross-platform screenshot utility
 License:        MIT
@@ -84,6 +84,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/snapx.desktop
 %{_datadir}/icons/hicolor/*/apps/snapx.*
 
 %changelog
+* Sun Jun 01 2026 snapx Team <snapx@example.com> - 2.0.0-1
+- Beautiful export (background/padding/shadow/rounded corners); ellipse, line and eyedropper tools
+- Adaptive (faster) capture timing; image-pipeline perf; CSS fixes; reveal-in-folder
+
 * Fri May 29 2026 snapx Team <snapx@example.com> - 1.3.1-1
 - Windows upload.c build fix; Flatpak CI --user install
 

@@ -5,6 +5,28 @@ All notable changes to snapx are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-06-01
+
+### Added
+
+- **Beautiful export** — wrap a capture in padding, a solid/gradient/transparent background, rounded corners and a soft drop shadow. Live-preview **Beautify…** dialog with **Copy**/**Save**; an "Apply on Save/Copy/Upload" toggle composites automatically. Pure Cairo, no new dependencies. Configurable in **Settings → Output** and persisted in config.
+- **Annotation tools** — **Ellipse/circle** and straight **Line** tools.
+- **Eyedropper** — sample an annotation colour directly from the image (**Pick** in the toolbar).
+
+### Changed
+
+- **Faster captures** — the fixed 200 ms pre-capture wait is now adaptive: snapx waits only until its window is actually unmapped (bounded, with a short repaint margin), so captures feel near-instant on most systems.
+- **Copy to clipboard** now flattens annotations (and applies beautify when enabled) instead of copying the raw capture.
+- **Open folder** reveals the folder of the last saved file when available.
+- GUI capture (buttons and hotkeys) now honours the configured **pre-capture delay** for all modes.
+- Annotation toolbar grouped (shapes · freehand/text · effects) for readability.
+
+### Fixed
+
+- GTK CSS theme-parser warnings (`max-width`, `margin-start/-end` are not valid GTK properties).
+- GResource (CSS) now re-bundles when stylesheet files change, not only when the manifest changes.
+- Removed the 1024-annotation render cap; beautify drop-shadow cost is bounded for large images.
+
 ## [1.3.1] - 2026-05-29
 
 ### Fixed
@@ -12,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows release build** — libcurl upload code `-Wformat-truncation` failures with `-Werror` (Imgur auth header and JSON field parsing buffers)
 - **Flatpak CI** — use `--user` for flatpak remote/install/build on GitHub Actions (system configure not permitted)
 
+[2.0.0]: https://github.com/Prem01-cyber/snapx/releases/tag/v2.0.0
 [1.3.1]: https://github.com/Prem01-cyber/snapx/releases/tag/v1.3.1
 
 ## [1.3.0] - 2026-05-29

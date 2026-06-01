@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(snapx VERSION 1.3.1 LANGUAGES C)
+project(snapx VERSION 2.0.0 LANGUAGES C)
 
 if(APPLE)
     enable_language(OBJC)
@@ -258,6 +258,25 @@ endif()
 # ─── Resources (GLib resource bundle) ────────────────────────────────────────
 find_program(GLIB_COMPILE_RESOURCES glib-compile-resources)
 if(GLIB_COMPILE_RESOURCES)
+    # Track the files referenced by the manifest (e.g. snapx.css) so editing
+    # them re-bundles the GResource — not just editing the .xml itself.
+    execute_process(
+        COMMAND ${GLIB_COMPILE_RESOURCES} --generate-dependencies
+                --sourcedir=${CMAKE_CURRENT_SOURCE_DIR}/resources
+                ${CMAKE_CURRENT_SOURCE_DIR}/resources/snapx.gresource.xml
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/resources
+        OUTPUT_VARIABLE SNAPX_RESOURCE_DEPS
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REPLACE "\n" ";" SNAPX_RESOURCE_DEPS "${SNAPX_RESOURCE_DEPS}")
+    set(SNAPX_RESOURCE_DEP_PATHS "")
+    foreach(dep ${SNAPX_RESOURCE_DEPS})
+        if(IS_ABSOLUTE "${dep}")
+            list(APPEND SNAPX_RESOURCE_DEP_PATHS "${dep}")
+        else()
+            list(APPEND SNAPX_RESOURCE_DEP_PATHS
+                 "${CMAKE_CURRENT_SOURCE_DIR}/resources/${dep}")
+        endif()
+    endforeach()
     add_custom_command(
         OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/snapx_resources.c
         COMMAND ${GLIB_COMPILE_RESOURCES}
@@ -265,6 +284,7 @@ if(GLIB_COMPILE_RESOURCES)
                 --generate-source
                 ${CMAKE_CURRENT_SOURCE_DIR}/resources/snapx.gresource.xml
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/resources/snapx.gresource.xml
+                ${SNAPX_RESOURCE_DEP_PATHS}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/resources
         COMMENT "Compiling GLib resources"
     )
