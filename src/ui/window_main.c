@@ -27,6 +27,8 @@
 #include "overlay.h"
 #include "toolbar.h"
 #include "settings_dialog.h"
+#include "beautify_dialog.h"
+#include "../output/beautify.h"
 #include "../annotation/canvas.h"
 #include "../annotation/annotation.h"
 #include "../capture/capture.h"
@@ -215,6 +217,28 @@ static cairo_surface_t *make_display_surface(const SnapxImage *img)
     }
     cairo_surface_mark_dirty(surf);
     return surf;
+}
+
+/**
+ * Flatten annotations onto the current image and, when beautify is enabled,
+ * compose the padded/background/shadow result.  Returns a newly allocated
+ * image the caller must free, or NULL if there is nothing to flatten (caller
+ * should fall back to mw->current_image).
+ */
+static SnapxImage *flatten_for_export(MainWindow *mw)
+{
+    if (!mw->current_image) return NULL;
+    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+    SnapxImage *base = flat ? flat : mw->current_image;
+
+    if (mw->config && mw->config->beautify.enabled) {
+        SnapxImage *pretty = snapx_beautify_apply(base, &mw->config->beautify);
+        if (pretty) {
+            if (flat) snapx_image_free(flat);
+            return pretty;
+        }
+    }
+    return flat;
 }
 
 /* ─── Scaled surface cache ───────────────────────────────────────────────── */
@@ -933,7 +957,7 @@ static void after_capture(MainWindow *mw, SnapxImage *img, const char *ok_msg)
     }
     if (mw->config->upload_auto && snapx_upload_available()
         && mw->config->upload_service != SNAPX_UPLOAD_NONE) {
-        SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+        SnapxImage *flat = flatten_for_export(mw);
         do_upload_image(mw, flat ? flat : mw->current_image);
         snapx_image_free(flat);
     }
@@ -1360,7 +1384,7 @@ static void on_upload(GtkButton *b, gpointer d)
         return;
     }
     if (!mw->current_image) { set_status(mw, "Nothing to upload."); return; }
-    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+    SnapxImage *flat = flatten_for_export(mw);
     do_upload_image(mw, flat ? flat : mw->current_image);
     snapx_image_free(flat);
 }
@@ -1396,10 +1420,21 @@ static void on_pin(GtkButton *b, gpointer d)
     (void)b;
     MainWindow *mw = (MainWindow *)d;
     if (!mw->current_image) return;
-    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+    SnapxImage *flat = flatten_for_export(mw);
     snapx_pin_image(flat ? flat : mw->current_image);
     snapx_image_free(flat);
     set_status(mw, "Pinned to screen.");
+}
+
+static void on_beautify(GtkButton *b, gpointer d)
+{
+    (void)b;
+    MainWindow *mw = (MainWindow *)d;
+    if (!mw->current_image) { set_status(mw, "Capture an image first."); return; }
+    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+    snapx_beautify_dialog_show(GTK_WINDOW(mw->win), mw->config,
+                               flat ? flat : mw->current_image);
+    snapx_image_free(flat);
 }
 
 static void on_copy_clipboard(GtkButton *b, gpointer d)
@@ -1407,7 +1442,9 @@ static void on_copy_clipboard(GtkButton *b, gpointer d)
     (void)b;
     MainWindow *mw = (MainWindow *)d;
     if (!mw->current_image) { set_status(mw, "Nothing to copy."); return; }
-    snapx_clipboard_copy_image(mw->current_image);
+    SnapxImage *flat = flatten_for_export(mw);
+    snapx_clipboard_copy_image(flat ? flat : mw->current_image);
+    snapx_image_free(flat);
     set_status(mw, "Copied to clipboard.");
 }
 
@@ -1463,7 +1500,7 @@ static void on_save(GtkButton *b, gpointer d)
     char path[512];
     snapx_config_build_path(mw->config, fmt, path, sizeof(path));
 
-    SnapxImage *flat = snapx_canvas_flatten(mw->canvas, mw->current_image);
+    SnapxImage *flat = flatten_for_export(mw);
     int quality = (int)(mw->quality_scale
                         ? gtk_range_get_value(GTK_RANGE(mw->quality_scale))
                         : mw->config->jpeg_quality);
@@ -2086,6 +2123,7 @@ void snapx_window_main_create(GtkApplication      *app,
                             config->default_format != SNAPX_FORMAT_PNG);
 
     GtkWidget *btn_copy = gtk_button_new_with_label("Copy");
+    GtkWidget *btn_beautify = gtk_button_new_with_label("Beautify…");
     GtkWidget *btn_ocr = gtk_button_new_with_label("Copy text");
     GtkWidget *btn_upload = gtk_button_new_with_label("Upload");
     GtkWidget *btn_recents = gtk_toggle_button_new_with_label("Recents");
@@ -2096,6 +2134,8 @@ void snapx_window_main_create(GtkApplication      *app,
     mw->btn_recents = btn_recents;
     gtk_widget_add_css_class(btn_save, "suggested-action");
     gtk_widget_set_tooltip_text(btn_copy, "Copy to clipboard  (Ctrl+C)");
+    gtk_widget_set_tooltip_text(btn_beautify,
+        "Add a background, padding, rounded corners and shadow");
     gtk_widget_set_tooltip_text(btn_ocr, "Copy text from image (OCR)");
     gtk_widget_set_tooltip_text(btn_upload, "Upload and copy link  (Ctrl+U)");
     gtk_widget_set_tooltip_text(btn_recents,
@@ -2104,6 +2144,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_widget_set_tooltip_text(btn_folder,
         "Open screenshots folder in file manager (last save location if available)");
     g_signal_connect(btn_copy,   "clicked", G_CALLBACK(on_copy_clipboard), mw);
+    g_signal_connect(btn_beautify,"clicked", G_CALLBACK(on_beautify),       mw);
     g_signal_connect(btn_ocr,    "clicked", G_CALLBACK(on_ocr),            mw);
     g_signal_connect(btn_upload, "clicked", G_CALLBACK(on_upload),         mw);
     g_signal_connect(btn_recents,"toggled", G_CALLBACK(on_recents),        mw);
@@ -2119,6 +2160,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_folder);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_upload);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_ocr);
+    gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_beautify);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_copy);
     gtk_action_bar_pack_end(GTK_ACTION_BAR(action_bar), btn_recents);
 #else
@@ -2130,6 +2172,7 @@ void snapx_window_main_create(GtkApplication      *app,
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_folder,        FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_upload,        FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_ocr,           FALSE, FALSE, 4);
+    gtk_box_pack_end  (GTK_BOX(action_bar), btn_beautify,      FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_copy,          FALSE, FALSE, 4);
     gtk_box_pack_end  (GTK_BOX(action_bar), btn_recents,       FALSE, FALSE, 4);
 #endif
@@ -2278,7 +2321,7 @@ int snapx_window_main_save_to(const char *path)
             GTK_COMBO_BOX(g_win.format_combo));
 #endif
     }
-    SnapxImage *flat = snapx_canvas_flatten(g_win.canvas, g_win.current_image);
+    SnapxImage *flat = flatten_for_export(&g_win);
     int quality = g_win.quality_scale
         ? (int)gtk_range_get_value(GTK_RANGE(g_win.quality_scale))
         : g_win.config->jpeg_quality;

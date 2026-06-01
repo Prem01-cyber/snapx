@@ -227,6 +227,7 @@ if(NOT SNAPX_HEADLESS_ONLY)
         src/ui/window_main.c
         src/ui/overlay.c
         src/ui/toolbar.c
+        src/ui/beautify_dialog.c
         src/ui/settings_dialog.c
         src/ui/tray.c
         src/ui/pin_window.c
