@@ -5,6 +5,12 @@ All notable changes to snapx are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-06-01
+
+### Fixed
+
+- **Windows: "vulkan-1.dll was not found" at launch.** GTK4's Windows build imports the Vulkan loader, but `ldd` on the CI runner resolved `vulkan-1.dll` to `C:\Windows\System32` (so it was skipped) while target machines may not have it. DLL bundling now keys off the dependency *name* and copies it from the MSYS2 prefix, so prefix-provided DLLs shadowed by System32 (like `vulkan-1.dll`) are included; the Vulkan loader is also installed explicitly in CI.
+
 ## [2.0.1] - 2026-06-01
 
 ### Fixed
@@ -40,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows release build** — libcurl upload code `-Wformat-truncation` failures with `-Werror` (Imgur auth header and JSON field parsing buffers)
 - **Flatpak CI** — use `--user` for flatpak remote/install/build on GitHub Actions (system configure not permitted)
 
+[2.0.2]: https://github.com/Prem01-cyber/snapx/releases/tag/v2.0.2
 [2.0.1]: https://github.com/Prem01-cyber/snapx/releases/tag/v2.0.1
 [2.0.0]: https://github.com/Prem01-cyber/snapx/releases/tag/v2.0.0
 [1.3.1]: https://github.com/Prem01-cyber/snapx/releases/tag/v1.3.1

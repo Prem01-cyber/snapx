@@ -27,18 +27,28 @@ if [[ -n "${MINGW_PREFIX:-}" ]]; then
     copied=0
     if command -v ldd >/dev/null 2>&1; then
         echo "Collecting dependent DLLs via ldd…"
-        # ldd recurses; column 3 is the resolved path.  Keep only DLLs from a
-        # mingw/ucrt/clang prefix; skip system DLLs.
-        while read -r dll; do
-            if [[ -f "$dll" ]]; then
-                cp -u "$dll" "${BUILD}/" && copied=$((copied + 1))
+        # ldd recurses over the whole import tree.  We key off the dependency
+        # *name* (column 1) and copy it from the MSYS2 prefix whenever it exists
+        # there.  This is more robust than filtering by ldd's resolved path:
+        # some prefix-provided DLLs (notably vulkan-1.dll, which GTK4 imports)
+        # are shadowed by a copy in C:\Windows\System32 on the build runner, so
+        # a path filter would wrongly skip them — yet target machines may lack
+        # them.  Copying by name from the prefix bundles those while still
+        # excluding genuine OS DLLs (kernel32.dll, api-ms-win-*) that aren't in
+        # the prefix at all.
+        while read -r name; do
+            if [[ -n "$name" && -f "${BIN}/${name}" ]]; then
+                cp -u "${BIN}/${name}" "${BUILD}/" && copied=$((copied + 1))
             fi
-        done < <(ldd "${BUILD}/snapx.exe" \
-                    | awk '{print $3}' \
-                    | grep -iE '/(ucrt64|mingw64|mingw32|clang64|clang32)/bin/' \
-                    | sort -u)
+        done < <(ldd "${BUILD}/snapx.exe" | awk '{print $1}' | sort -u)
         echo "Bundled ${copied} DLLs from ${MINGW_PREFIX}."
     fi
+
+    # Explicit extras that ldd may miss (dynamically loaded) or that get
+    # shadowed by System32 — copy from the prefix when present.
+    for extra in vulkan-1.dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll; do
+        [[ -f "${BIN}/${extra}" ]] && cp -u "${BIN}/${extra}" "${BUILD}/"
+    done
 
     # Fallback / belt-and-suspenders: ensure the core stack is present even if
     # ldd is unavailable or missed something.

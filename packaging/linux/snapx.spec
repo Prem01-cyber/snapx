@@ -1,5 +1,5 @@
 Name:           snapx
-Version:        2.0.1
+Version:        2.0.2
 Release:        1%{?dist}
 Summary:        Lightweight cross-platform screenshot utility
 License:        MIT
@@ -84,6 +84,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/snapx.desktop
 %{_datadir}/icons/hicolor/*/apps/snapx.*
 
 %changelog
+* Sun Jun 01 2026 snapx Team <snapx@example.com> - 2.0.2-1
+- Windows: bundle vulkan-1.dll (GTK4 Vulkan loader) — fixes "vulkan-1.dll not found" at launch
+
 * Sun Jun 01 2026 snapx Team <snapx@example.com> - 2.0.1-1
 - Windows: bundle the full DLL dependency closure (fixes "libcurl-4.dll not found" at launch)
 
