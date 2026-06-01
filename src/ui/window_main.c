@@ -1007,7 +1007,9 @@ static void do_capture(MainWindow *mw, SnapxCaptureMode mode, int delay)
 
 static void on_capture_fullscreen(GtkButton *b, gpointer d)
 {
-    (void)b; do_capture((MainWindow *)d, SNAPX_CAPTURE_FULLSCREEN, 0);
+    (void)b;
+    MainWindow *mw = (MainWindow *)d;
+    do_capture(mw, SNAPX_CAPTURE_FULLSCREEN, mw->config->default_delay);
 }
 
 typedef struct {
@@ -1062,6 +1064,7 @@ static void on_capture_region(GtkButton *b, gpointer d)
 
     SnapxCaptureRequest full_req = {0};
     full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
+    full_req.delay_sec      = mw->config->default_delay;
     full_req.include_cursor = mw->config->show_cursor;
     snapx_capture_async(mw->backend, &full_req, region_capture_desktop_done, ctx);
 }
@@ -1137,13 +1140,16 @@ static void on_capture_monitor_btn(GtkButton *b, gpointer d)
 
     SnapxCaptureRequest full_req = {0};
     full_req.mode           = SNAPX_CAPTURE_FULLSCREEN;
+    full_req.delay_sec      = mw->config->default_delay;
     full_req.include_cursor = mw->config->show_cursor;
     snapx_capture_async(mw->backend, &full_req, monitor_capture_done, ctx);
 }
 
 static void on_capture_window(GtkButton *b, gpointer d)
 {
-    (void)b; do_capture((MainWindow *)d, SNAPX_CAPTURE_ACTIVE_WINDOW, 0);
+    (void)b;
+    MainWindow *mw = (MainWindow *)d;
+    do_capture(mw, SNAPX_CAPTURE_ACTIVE_WINDOW, mw->config->default_delay);
 }
 
 static void trigger_capture_mode(MainWindow *mw, SnapxCaptureMode mode)
@@ -1479,6 +1485,16 @@ static void on_open_folder(GtkButton *b, gpointer d)
 {
     (void)b;
     MainWindow *mw = (MainWindow *)d;
+    /* Reveal the folder of the last saved file when available, so users land
+     * on the screenshot they just wrote rather than the generic directory. */
+    if (mw->last_save_path[0]) {
+        char *dir = g_path_get_dirname(mw->last_save_path);
+        if (dir) {
+            snapx_open_path_in_file_manager(mw, dir);
+            g_free(dir);
+            return;
+        }
+    }
     snapx_open_path_in_file_manager(mw, mw->config->save_dir);
 }
 
