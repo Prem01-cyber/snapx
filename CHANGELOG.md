@@ -5,6 +5,12 @@ All notable changes to snapx are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-06-01
+
+### Fixed
+
+- **Windows: app failed to launch** with "libcurl-4.dll not found" (and other missing DLLs). The installer now bundles the **complete transitive DLL closure** of the executable (resolved via `ldd`) instead of a short hand-maintained list, plus the gdk-pixbuf image loaders, compiled GLib schemas, and icon themes. `libcurl` is also installed explicitly in the Windows CI build.
+
 ## [2.0.0] - 2026-06-01
 
 ### Added
@@ -34,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows release build** — libcurl upload code `-Wformat-truncation` failures with `-Werror` (Imgur auth header and JSON field parsing buffers)
 - **Flatpak CI** — use `--user` for flatpak remote/install/build on GitHub Actions (system configure not permitted)
 
+[2.0.1]: https://github.com/Prem01-cyber/snapx/releases/tag/v2.0.1
 [2.0.0]: https://github.com/Prem01-cyber/snapx/releases/tag/v2.0.0
 [1.3.1]: https://github.com/Prem01-cyber/snapx/releases/tag/v1.3.1
 

@@ -21,7 +21,7 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=2.0.0" >> "$GITHUB_OUTPUT"
+            echo "version=2.0.1" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install dependencies
@@ -71,6 +71,7 @@ jobs:
             mingw-w64-ucrt-x86_64-libpng
             mingw-w64-ucrt-x86_64-libjpeg-turbo
             mingw-w64-ucrt-x86_64-libwebp
+            mingw-w64-ucrt-x86_64-curl
             mingw-w64-ucrt-x86_64-dbus
             mingw-w64-ucrt-x86_64-librsvg
 
@@ -80,7 +81,7 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=2.0.0" >> "$GITHUB_OUTPUT"
+            echo "version=2.0.1" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install Inno Setup
@@ -121,7 +122,7 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=2.0.0" >> "$GITHUB_OUTPUT"
+            echo "version=2.0.1" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install dependencies
@@ -150,7 +151,7 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=2.0.0" >> "$GITHUB_OUTPUT"
+            echo "version=2.0.1" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install build dependencies
@@ -219,8 +220,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v2.0.0' }}
-          name: snapx ${{ github.ref_type == 'tag' && github.ref_name || 'v2.0.0' }}
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v2.0.1' }}
+          name: snapx ${{ github.ref_type == 'tag' && github.ref_name || 'v2.0.1' }}
           body_path: CHANGELOG.md
           draft: ${{ github.event_name == 'workflow_dispatch' }}
           files: |

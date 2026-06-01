@@ -5,7 +5,7 @@
 ; Allow the version to be supplied on the command line (iscc /DMyAppVersion=…);
 ; the literal below is only the local-build fallback.
 #ifndef MyAppVersion
-  #define MyAppVersion "2.0.0"
+  #define MyAppVersion "2.0.1"
 #endif
 #define MyAppPublisher "snapx Team"
 #define MyAppURL       "https://github.com/Prem01-cyber/snapx"
@@ -45,8 +45,9 @@ Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescrip
 
 [Files]
 Source: "{#MyBuildDir}\{#MyAppExeName}";   DestDir: "{app}"; Flags: ignoreversion
-; GTK runtime DLLs (bundled via MSYS2)
-Source: "{#MyBuildDir}\*.dll";             DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+; GTK runtime DLLs (bundled flat into build/ via ldd in build-installer.sh).
+; No recursesubdirs here — loader DLLs under lib\ are installed by the lib\ rule.
+Source: "{#MyBuildDir}\*.dll";             DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyBuildDir}\lib\*";             DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "{#MyBuildDir}\share\*";           DestDir: "{app}\share"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "..\..\resources\icons\hicolor\256x256\apps\snapx.png"; DestDir: "{app}"; DestName: "snapx.png"; Flags: ignoreversion

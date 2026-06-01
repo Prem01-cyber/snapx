@@ -260,10 +260,10 @@ sudo cmake --install build        # optional
 ### Packaging
 
 ```bash
-./packaging/linux/build-appimage.sh 2.0.0      # AppImage + tarball
-./packaging/linux/build-rpm.sh 2.0.0           # Fedora/RHEL RPM
-./packaging/macos/build-dmg.sh 2.0.0           # macOS
-# Windows (MSYS2): ./packaging/windows/build-installer.sh 2.0.0
+./packaging/linux/build-appimage.sh 2.0.1      # AppImage + tarball
+./packaging/linux/build-rpm.sh 2.0.1           # Fedora/RHEL RPM
+./packaging/macos/build-dmg.sh 2.0.1           # macOS
+# Windows (MSYS2): ./packaging/windows/build-installer.sh 2.0.1
 ```
 
 Tagging `vX.Y.Z` triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds and uploads the AppImage, Windows installer, and macOS DMG to the GitHub Release.
