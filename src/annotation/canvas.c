@@ -343,7 +343,8 @@ void snapx_canvas_render_pending(const SnapxAnnotationCanvas *canvas, cairo_t *c
         return;
     }
     if (tool == SNAPX_TOOL_RECT || tool == SNAPX_TOOL_ARROW ||
-        tool == SNAPX_TOOL_HIGHLIGHT || tool == SNAPX_TOOL_REDACT) {
+        tool == SNAPX_TOOL_HIGHLIGHT || tool == SNAPX_TOOL_REDACT ||
+        tool == SNAPX_TOOL_LINE || tool == SNAPX_TOOL_ELLIPSE) {
         snapx_draw_annotation(cr, canvas->pending);
         return;
     }

@@ -12,6 +12,7 @@
 #define SNAPX_CONFIG_H
 
 #include "../capture/capture.h"
+#include "../output/beautify.h"
 #include "shortcut.h"
 
 #define SNAPX_CONFIG_MAX_PATH    512
@@ -37,6 +38,8 @@ typedef enum {
     SNAPX_TOOL_HIGHLIGHT = 5,
     SNAPX_TOOL_CALLOUT   = 6,
     SNAPX_TOOL_REDACT    = 7,
+    SNAPX_TOOL_LINE      = 8,
+    SNAPX_TOOL_ELLIPSE   = 9,
 } SnapxAnnotationTool;
 #endif
 
@@ -80,6 +83,9 @@ typedef struct {
 
     /* OCR */
     char               ocr_lang[16];
+
+    /* Beautiful-export (background / padding / shadow) */
+    SnapxBeautifyConfig beautify;
 
     /* Annotation defaults */
     SnapxAnnotationTool default_tool;

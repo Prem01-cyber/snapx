@@ -28,6 +28,8 @@ typedef enum {
     SNAPX_TOOL_HIGHLIGHT = 5,
     SNAPX_TOOL_CALLOUT   = 6,
     SNAPX_TOOL_REDACT    = 7,
+    SNAPX_TOOL_LINE      = 8,
+    SNAPX_TOOL_ELLIPSE   = 9,
 } SnapxAnnotationTool;
 #endif
 

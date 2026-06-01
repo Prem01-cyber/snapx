@@ -284,6 +284,23 @@ void snapx_main_widget_to_image(double wx, double wy, double *ix, double *iy)
     widget_to_image_coords(&g_win, wx, wy, ix, iy);
 }
 
+int snapx_main_sample_color(double ix, double iy, GdkRGBA *out)
+{
+    MainWindow *mw = &g_win;
+    if (!out || !mw->current_image || !mw->current_image->data) return 0;
+    int x = (int)ix, y = (int)iy;
+    if (x < 0 || y < 0 ||
+        x >= mw->current_image->width || y >= mw->current_image->height)
+        return 0;
+    const uint8_t *p = mw->current_image->data
+                     + (size_t)y * mw->current_image->stride + (size_t)x * 4;
+    out->red   = p[0] / 255.0;
+    out->green = p[1] / 255.0;
+    out->blue  = p[2] / 255.0;
+    out->alpha = 1.0;
+    return 1;
+}
+
 /** Cached 24×24 checkerboard tile (built once, tiled in rebuild_scaled). */
 static cairo_surface_t *get_checker_tile(void)
 {

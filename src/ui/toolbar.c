@@ -33,8 +33,13 @@ typedef struct {
     double                 stroke_start_x, stroke_start_y;
 
     /* Tool button references so we can set active state */
-    GtkWidget             *tool_btns[8];
+    GtkWidget             *tool_btns[10];
     GtkWidget             *color_btn;
+
+    /* Eyedropper: when armed, the next canvas click samples a pixel colour
+     * instead of starting a stroke. */
+    GtkWidget             *eyedropper_btn;
+    gboolean               eyedropper_armed;
 
     /* Annotation dirty flag (set on every stroke commit) */
     gboolean               annot_dirty;
@@ -94,6 +99,8 @@ typedef struct {
 
 static const ToolDef TOOLS[] = {
     { SNAPX_TOOL_RECT,      "Rect",    "Draw rectangle (R)"           },
+    { SNAPX_TOOL_ELLIPSE,   "Ellipse", "Draw ellipse / circle"        },
+    { SNAPX_TOOL_LINE,      "Line",    "Draw straight line"           },
     { SNAPX_TOOL_ARROW,     "Arrow",   "Draw arrow (A)"               },
     { SNAPX_TOOL_PEN,       "Pen",     "Free-hand pen (P)"            },
     { SNAPX_TOOL_TEXT,      "Text",    "Add text label (T)"           },
@@ -125,6 +132,24 @@ static void on_tool_toggled(GtkToggleButton *btn, gpointer data)
 
 /* ─── Color picker ───────────────────────────────────────────────────────── */
 
+/** Set the active annotation colour and sync the canvas + colour button widget. */
+static void apply_active_color(const GdkRGBA *c)
+{
+    if (!c) return;
+    g_tb.active_color = *c;
+    if (g_tb.canvas)
+        snapx_canvas_set_color(g_tb.canvas, &g_tb.active_color);
+    if (g_tb.color_btn) {
+#if GTK_CHECK_VERSION(4, 10, 0)
+        gtk_color_dialog_button_set_rgba(GTK_COLOR_DIALOG_BUTTON(g_tb.color_btn),
+                                         &g_tb.active_color);
+#else
+        gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(g_tb.color_btn),
+                                   &g_tb.active_color);
+#endif
+    }
+}
+
 static void on_color_notify(GObject *obj, GParamSpec *pspec, gpointer data)
 {
     (void)pspec; (void)data;
@@ -137,6 +162,35 @@ static void on_color_notify(GObject *obj, GParamSpec *pspec, gpointer data)
 #endif
     if (g_tb.canvas)
         snapx_canvas_set_color(g_tb.canvas, &g_tb.active_color);
+}
+
+/* ─── Eyedropper ─────────────────────────────────────────────────────────── */
+
+static void set_eyedropper_armed(gboolean armed)
+{
+    g_tb.eyedropper_armed = armed;
+    if (g_tb.eyedropper_btn)
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(g_tb.eyedropper_btn), armed);
+}
+
+static void on_eyedropper_toggled(GtkToggleButton *btn, gpointer data)
+{
+    (void)data;
+    g_tb.eyedropper_armed = gtk_toggle_button_get_active(btn);
+}
+
+/** Sample the image colour under widget coords (wx, wy) and adopt it.
+ *  @return TRUE if a colour was sampled (eyedropper consumed the click). */
+static gboolean eyedropper_try_sample(double wx, double wy)
+{
+    if (!g_tb.eyedropper_armed) return FALSE;
+    double ix, iy;
+    stroke_point(wx, wy, &ix, &iy);
+    GdkRGBA c;
+    if (snapx_main_sample_color(ix, iy, &c))
+        apply_active_color(&c);
+    set_eyedropper_armed(FALSE);
+    return TRUE;
 }
 
 /* ─── Undo / Redo ────────────────────────────────────────────────────────── */
@@ -170,6 +224,7 @@ static void on_canvas_press(GtkGestureClick *g, int n, double x, double y,
                               gpointer d)
 {
     (void)g; (void)n; (void)d;
+    if (eyedropper_try_sample(x, y)) return;
     if (!g_tb.canvas || !g_tb.input_enabled) return;
     double ix, iy;
     stroke_point(x, y, &ix, &iy);
@@ -223,6 +278,7 @@ static void on_canvas_motion(GtkEventControllerMotion *ctrl, double x, double y,
 static gboolean on_canvas_press_gtk3(GtkWidget *w, GdkEventButton *ev, gpointer d)
 {
     (void)d;
+    if (ev->button == 1 && eyedropper_try_sample(ev->x, ev->y)) return FALSE;
     if (!g_tb.canvas || !g_tb.input_enabled || ev->button != 1) return FALSE;
     double ix, iy;
     stroke_point(ev->x, ev->y, &ix, &iy);
@@ -386,6 +442,8 @@ GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
     g_tb.active_color  = (GdkRGBA){ 0.96, 0.26, 0.26, 1.0 };
     g_tb.annot_dirty   = FALSE;
     g_tb.color_btn     = NULL;
+    g_tb.eyedropper_btn   = NULL;
+    g_tb.eyedropper_armed = FALSE;
     memset(g_tb.tool_btns, 0, sizeof(g_tb.tool_btns));
 
     if (config) {
@@ -460,6 +518,19 @@ GtkWidget *snapx_toolbar_create(SnapxAnnotationCanvas *canvas,
     gtk_box_append(GTK_BOX(bar), color_btn);
 #else
     gtk_box_pack_start(GTK_BOX(bar), color_btn, FALSE, FALSE, 2);
+#endif
+
+    /* ── Eyedropper ──────────────────────────────────────────────────────── */
+    GtkWidget *eyedropper = gtk_toggle_button_new_with_label("Pick");
+    gtk_widget_add_css_class(eyedropper, "snapx-tool");
+    gtk_widget_set_tooltip_text(eyedropper,
+        "Eyedropper — click the image to sample a colour");
+    g_signal_connect(eyedropper, "toggled", G_CALLBACK(on_eyedropper_toggled), NULL);
+    g_tb.eyedropper_btn = eyedropper;
+#ifdef SNAPX_USE_GTK4
+    gtk_box_append(GTK_BOX(bar), eyedropper);
+#else
+    gtk_box_pack_start(GTK_BOX(bar), eyedropper, FALSE, FALSE, 2);
 #endif
 
     /* ── Flexible spacer ─────────────────────────────────────────────────── */

@@ -208,6 +208,7 @@ set(SOURCES
     src/main.c
     src/capture/capture.c
     src/output/save.c
+    src/output/beautify.c
     src/output/clipboard.c
     src/output/upload.c
     src/utils/config.c

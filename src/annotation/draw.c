@@ -156,6 +156,30 @@ void snapx_draw_annotation(cairo_t *cr, const SnapxAnnotation *ann)
             break;
         }
 
+        case SNAPX_TOOL_LINE: {
+            cairo_move_to(cr, ann->rect.x1, ann->rect.y1);
+            cairo_line_to(cr, ann->rect.x2, ann->rect.y2);
+            cairo_stroke(cr);
+            break;
+        }
+
+        case SNAPX_TOOL_ELLIPSE: {
+            double cx = (ann->rect.x1 + ann->rect.x2) / 2.0;
+            double cy = (ann->rect.y1 + ann->rect.y2) / 2.0;
+            double rx = fabs(ann->rect.x2 - ann->rect.x1) / 2.0;
+            double ry = fabs(ann->rect.y2 - ann->rect.y1) / 2.0;
+            if (rx < 0.5 || ry < 0.5) break;
+            /* Build the ellipse under a scaled CTM, then stroke with the
+             * original CTM so the outline keeps a uniform line width. */
+            cairo_save(cr);
+            cairo_translate(cr, cx, cy);
+            cairo_scale(cr, rx, ry);
+            cairo_arc(cr, 0.0, 0.0, 1.0, 0.0, 2 * M_PI);
+            cairo_restore(cr);
+            cairo_stroke(cr);
+            break;
+        }
+
         case SNAPX_TOOL_PEN: {
             if (ann->points.n < 2) break;
             cairo_move_to(cr, ann->points.xs[0], ann->points.ys[0]);
