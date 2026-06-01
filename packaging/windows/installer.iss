@@ -2,7 +2,11 @@
 ; Build: iscc installer.iss
 
 #define MyAppName      "snapx"
-#define MyAppVersion   "1.3.1"
+; Allow the version to be supplied on the command line (iscc /DMyAppVersion=…);
+; the literal below is only the local-build fallback.
+#ifndef MyAppVersion
+  #define MyAppVersion "2.0.0"
+#endif
 #define MyAppPublisher "snapx Team"
 #define MyAppURL       "https://github.com/Prem01-cyber/snapx"
 #define MyAppExeName   "snapx.exe"
