@@ -1,5 +1,5 @@
 Name:           snapx
-Version:        2.0.2
+Version:        2.0.3
 Release:        1%{?dist}
 Summary:        Lightweight cross-platform screenshot utility
 License:        MIT
@@ -84,6 +84,12 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/snapx.desktop
 %{_datadir}/icons/hicolor/*/apps/snapx.*
 
 %changelog
+* Tue Jun 03 2026 snapx Team <snapx@example.com> - 2.0.3-1
+- Windows: fix black/blank window (force Cairo GSK renderer; relocatable bundled resources)
+- Windows: fix multi-monitor fullscreen capture (DXGI only for single monitor, GDI otherwise)
+- Wayland: snapx window no longer captured in its own region/monitor/screen shots
+- Build: fix -Werror=format-truncation in recent-captures panel
+
 * Sun Jun 01 2026 snapx Team <snapx@example.com> - 2.0.2-1
 - Windows: bundle vulkan-1.dll (GTK4 Vulkan loader) — fixes "vulkan-1.dll not found" at launch
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(snapx VERSION 2.0.2 LANGUAGES C)
+project(snapx VERSION 2.0.3 LANGUAGES C)
 
 if(APPLE)
     enable_language(OBJC)

@@ -5,6 +5,16 @@ All notable changes to snapx are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-06-03
+
+### Fixed
+
+- **Windows: black/blank window on launch.** GTK4 defaults to the Vulkan GSK renderer, which renders an all-black window on many Windows systems (VMs, RDP, older or mismatched GPU drivers). snapx now forces the always-correct Cairo renderer on Windows (overridable via `GSK_RENDERER`) before the toolkit initialises, and points GTK at its bundled GSettings schemas, gdk-pixbuf loaders and icon themes relative to the executable so resources resolve on the user's machine.
+- **Windows: image loaders/icons silently failed.** The bundled gdk-pixbuf `loaders.cache` hard-coded the build machine's paths; it is now rewritten to reference loaders by filename so PNG/SVG decoding and stock icons work on end-user machines.
+- **Windows: multi-monitor fullscreen captured only the primary display.** DXGI Desktop Duplication is per-output, but a fullscreen grab is treated as the whole virtual desktop. DXGI is now used only for single-monitor setups; multi-monitor fullscreen uses GDI, which grabs the entire virtual desktop in one shot.
+- **Wayland: snapx's own window appeared in region/monitor/screen captures.** The pre-capture hide waited only 90 ms, but GNOME/Mutter fades a closing window for ~200 ms, so the freeze was grabbed mid-animation. The window is now flushed and the settle margin outlasts the compositor's close animation (≈320 ms on Wayland, unchanged on X11), so captures no longer include the snapx UI and there's no need to drag the window to another monitor first.
+- **Build: failed under stricter GCC** (`-Werror=format-truncation`) in the recent-captures panel; the path buffer was enlarged so long save-directory paths are no longer truncated or skipped.
+
 ## [2.0.2] - 2026-06-01
 
 ### Fixed
