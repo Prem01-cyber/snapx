@@ -908,15 +908,19 @@ static void snapx_hide_for_capture(MainWindow *mw)
         snapx_save_window_state(mw);
     gtk_widget_set_visible(GTK_WIDGET(mw->win), FALSE);
 
+    /* Push the unmap request to the server immediately. */
+    GdkDisplay *dpy = gtk_widget_get_display(GTK_WIDGET(mw->win));
+    if (dpy)
+        gdk_display_flush(dpy);
+
     /*
      * Wait until the snapx window is actually gone before capturing, but adapt
      * to how fast the compositor is instead of always blocking for a fixed
-     * 200 ms.  We pump the main loop until the toplevel is unmapped (bounded so
-     * a slow/blocking compositor can never hang the capture), then add a short
-     * margin for the revealed area to repaint.  On a typical desktop this
-     * settles in well under the cap, making every capture feel instant.
+     * delay.  We pump the main loop until the toplevel is unmapped (bounded so
+     * a slow/blocking compositor can never hang the capture), then add a margin
+     * for the revealed area to be presented.
      */
-    const int max_wait_us = 250 * 1000;   /* hard ceiling */
+    const int max_wait_us = 400 * 1000;   /* hard ceiling */
     const int step_us     =   5 * 1000;
     int waited = 0;
     while (waited < max_wait_us) {
@@ -927,10 +931,22 @@ static void snapx_hide_for_capture(MainWindow *mw)
         g_usleep(step_us);
         waited += step_us;
     }
-    /* Repaint margin so the compositor presents the frame without snapx. */
-    g_usleep(90 * 1000);
+
+    /*
+     * Settle margin so the compositor presents a frame *without* snapx before
+     * we grab the screen.  On Wayland this must outlast the compositor's
+     * window-close animation (GNOME/Mutter fades a closing toplevel for
+     * ~200 ms); capturing mid-animation is exactly what put the snapx window
+     * into region/monitor freezes and forced users to drag snapx to another
+     * display first.  X11 unmaps instantly, so it keeps the short margin.
+     */
+    gboolean wayland = (mw->backend && mw->backend->type == SNAPX_BACKEND_WAYLAND);
+    int settle_us = wayland ? (320 * 1000) : (90 * 1000);
+    g_usleep(settle_us);
     while (g_main_context_pending(NULL))
         g_main_context_iteration(NULL, FALSE);
+    if (dpy)
+        gdk_display_sync(dpy);
 }
 
 static gboolean clipboard_idle_cb(gpointer data)

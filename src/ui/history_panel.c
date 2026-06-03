@@ -25,7 +25,7 @@ typedef struct {
     gboolean             open;
 } HistoryPanel;
 
-typedef struct { char path[512]; time_t mtime; } HistItem;
+typedef struct { char path[1024]; time_t mtime; } HistItem;
 
 static int is_image_ext(const char *name)
 {

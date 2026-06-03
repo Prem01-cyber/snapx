@@ -76,6 +76,15 @@ if [[ -n "${MINGW_PREFIX:-}" ]]; then
     if [[ -d "${MINGW_PREFIX}/lib/gdk-pixbuf-2.0" ]]; then
         mkdir -p "${BUILD}/lib"
         cp -r "${MINGW_PREFIX}/lib/gdk-pixbuf-2.0" "${BUILD}/lib/"
+        # The cache shipped in the prefix hard-codes the build machine's loader
+        # paths (…/ucrt64/lib/gdk-pixbuf-2.0/…), which don't exist on the user's
+        # PC, so PNG/SVG decoding and stock icons silently fail.  Rewrite it to
+        # reference loaders by bare filename; snapx points GDK_PIXBUF_MODULE_FILE
+        # at this copy and the loaders sit beside it, so relative lookup works.
+        cache="${BUILD}/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+        if [[ -f "$cache" ]]; then
+            sed -i -E 's#^"([^"]*[/\\])?([^"/\\]+\.dll)"#"\2"#' "$cache"
+        fi
     fi
 
     # GLib settings schemas + GTK data; recompile schemas so GSettings works.

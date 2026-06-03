@@ -271,6 +271,69 @@ static void on_activate(GtkApplication *gapp, gpointer user_data)
 }
 #endif
 
+/* ─── Windows GTK runtime environment ─────────────────────────────────────── */
+#if defined(SNAPX_PLATFORM_WINDOWS) && !defined(SNAPX_HEADLESS) && \
+    (defined(SNAPX_USE_GTK4) || defined(SNAPX_USE_GTK3))
+/**
+ * @brief Prepare GTK's runtime environment on Windows before the toolkit
+ *        initialises its display.
+ *
+ * Two classes of "it launches but shows a black/blank window" bugs are fixed
+ * here, both of which must be addressed *before* gtk_init / the first display
+ * connection:
+ *
+ *   1. GSK renderer.  GTK 4.14+ defaults to the Vulkan renderer, which renders
+ *      an all-black window on a large share of Windows systems (VMs, RDP,
+ *      older or mismatched GPU drivers).  We force the always-correct Cairo
+ *      software renderer — the snapx UI is light 2D drawing so the perf cost
+ *      is negligible — unless the user has explicitly chosen a renderer.
+ *
+ *   2. Relocatable resource paths.  The installer bundles GSettings schemas,
+ *      gdk-pixbuf loaders and icon themes next to snapx.exe, but their default
+ *      lookup paths are baked to the build machine's MSYS2 prefix.  We point
+ *      GTK at the bundled copies relative to the executable so schemas load,
+ *      images decode and stock icons render on the end user's machine.
+ *
+ * Every variable is only set when not already present, so power users and the
+ * test suite can still override any of them from the outside.
+ */
+static void snapx_win32_prepare_gtk_env(void)
+{
+    if (!g_getenv("GSK_RENDERER"))
+        g_setenv("GSK_RENDERER", "cairo", TRUE);
+
+    wchar_t exe_w[MAX_PATH];
+    DWORD n = GetModuleFileNameW(NULL, exe_w, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH)
+        return;
+
+    char *exe = g_utf16_to_utf8((const gunichar2 *)exe_w, -1, NULL, NULL, NULL);
+    if (!exe)
+        return;
+    char *dir = g_path_get_dirname(exe);
+    g_free(exe);
+    if (!dir)
+        return;
+
+    char *schemas = g_build_filename(dir, "share", "glib-2.0", "schemas", NULL);
+    char *share   = g_build_filename(dir, "share", NULL);
+    char *loaders = g_build_filename(dir, "lib", "gdk-pixbuf-2.0", "2.10.0",
+                                     "loaders.cache", NULL);
+
+    if (!g_getenv("GSETTINGS_SCHEMA_DIR") && g_file_test(schemas, G_FILE_TEST_IS_DIR))
+        g_setenv("GSETTINGS_SCHEMA_DIR", schemas, TRUE);
+    if (!g_getenv("XDG_DATA_DIRS") && g_file_test(share, G_FILE_TEST_IS_DIR))
+        g_setenv("XDG_DATA_DIRS", share, TRUE);
+    if (!g_getenv("GDK_PIXBUF_MODULE_FILE") && g_file_test(loaders, G_FILE_TEST_IS_REGULAR))
+        g_setenv("GDK_PIXBUF_MODULE_FILE", loaders, TRUE);
+
+    g_free(schemas);
+    g_free(share);
+    g_free(loaders);
+    g_free(dir);
+}
+#endif
+
 /* ─── main ───────────────────────────────────────────────────────────────── */
 
 int main(int argc, char **argv)
@@ -337,6 +400,11 @@ int main(int argc, char **argv)
 
     /* GUI path */
 #ifndef SNAPX_HEADLESS
+#if defined(SNAPX_PLATFORM_WINDOWS) && \
+    (defined(SNAPX_USE_GTK4) || defined(SNAPX_USE_GTK3))
+    /* Must run before any GTK display/renderer initialisation. */
+    snapx_win32_prepare_gtk_env();
+#endif
 #if GLIB_CHECK_VERSION(2, 74, 0)
     GtkApplication *gapp = gtk_application_new("io.github.snapx",
                                                G_APPLICATION_DEFAULT_FLAGS);

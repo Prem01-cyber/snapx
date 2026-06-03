@@ -295,10 +295,23 @@ static SnapxImage *windows_capture(SnapxCaptureBackend *backend,
             int sw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
             int sh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 #ifdef SNAPX_HAVE_DXGI
+            /*
+             * DXGI Desktop Duplication is per-output: dxgi_capture_output(0,0)
+             * only returns the *primary* monitor.  Callers (region/monitor
+             * crop) treat a fullscreen capture as the entire virtual desktop,
+             * so on a multi-monitor setup DXGI would silently drop every other
+             * display and mis-map all crops.  Use DXGI only for a single
+             * monitor; otherwise GDI BitBlt grabs the whole virtual desktop in
+             * one shot, which is what the rest of the pipeline expects.
+             */
             if (st->use_dxgi) {
-                SnapxImage *img = dxgi_capture_output(0, 0);
-                if (img) return img;
-                fprintf(stderr, "[windows] DXGI failed, falling back to GDI.\n");
+                SnapxMonitorInfo mons[16];
+                int nmon = windows_get_monitors(backend, mons, 16);
+                if (nmon == 1) {
+                    SnapxImage *img = dxgi_capture_output(0, 0);
+                    if (img) return img;
+                    fprintf(stderr, "[windows] DXGI failed, falling back to GDI.\n");
+                }
             }
 #endif
             return gdi_capture_rect(sx, sy, sw, sh);
